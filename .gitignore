@@ -1,0 +1,22 @@
+# Ambientes virtuais do Python
+backend/venv/
+venv/
+ENV/
+env/
+
+# Arquivos compilados do Python
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Configurações e variáveis de ambiente (IMPORTANTE para segurança)
+backend/.env
+.env
+
+# Arquivos de IDE e sistema operacional
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

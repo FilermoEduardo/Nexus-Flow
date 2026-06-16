@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Flows</title>
+    <!-- Tailwind CSS v3 CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome v6 CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        /* Glassmorphism custom styling */
+        .glass {
+            background: rgba(30, 41, 59, 0.45);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        .glass-card {
+            background: rgba(30, 41, 59, 0.3);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .glass-card:hover {
+            background: rgba(30, 41, 59, 0.55);
+            border-color: rgba(59, 130, 246, 0.4);
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -15px rgba(59, 130, 246, 0.2);
+        }
+
+        /* Customize scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        
+        /* Hide bpmn-js logo */
+        .bjs-powered-by {
+            display: none !important;
+        }
+    </style>
+    <!-- bpmn-js CDN -->
+    <script src="https://unpkg.com/bpmn-js@17.0.2/dist/bpmn-navigated-viewer.development.js"></script>
+    <!-- marked.js (Markdown parser) CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body class="h-full flex flex-col font-sans overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-blue-950">
+
+    <!-- PÁGINA INICIAL / DASHBOARD DE DUAS PORTAS -->    <div id="dashboard" class="flex-1 flex flex-col justify-center items-center px-6 transition-all duration-500 ease-in-out">
+        <div class="text-center mb-12 animate-fade-in">
+            <h1 class="text-5xl font-extrabold tracking-tight mb-4">
+                <span class="bg-gradient-to-r from-blue-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">Nexus Flows</span>
+            </h1>
+            <p class="text-slate-400 text-lg max-w-md mx-auto">A plataforma definitiva para diagnóstico, visualização e engenharia reversa de chatbots legados.</p>
+        </div>
+        <div class="grid md:grid-cols-3 gap-8 w-full max-w-6xl px-4">
+            <!-- PORTA A: ORÁCULO DE MANUTENÇÃO -->
+            <div id="btn-goto-oracle" class="glass-card rounded-2xl p-8 cursor-pointer flex flex-col justify-between h-80 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-300"></div>
+                <div>
+                    <div class="w-14 h-14 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400 text-2xl mb-6 border border-blue-500/20 group-hover:scale-110 transition-transform duration-300">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white mb-2 group-hover:text-blue-400 transition-colors duration-300">Oráculo de Manutenção</h2>
+                    <p class="text-slate-400 text-sm leading-relaxed">Analise fluxos JSON com inteligência artificial. Faça perguntas, anexe PDFs de documentação e ouça gravações de áudio de suporte para depurar o bot.</p>
+                </div>
+                <div class="flex items-center text-blue-400 text-sm font-semibold mt-4">
+                    Acessar Módulo <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                </div>
+            </div>
+ 
+            <!-- PORTA B: CONVERSOR DRAW.IO -->
+            <div id="btn-goto-converter" class="glass-card rounded-2xl p-8 cursor-pointer flex flex-col justify-between h-80 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all duration-300"></div>
+                <div>
+                    <div class="w-14 h-14 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 text-2xl mb-6 border border-indigo-500/20 group-hover:scale-110 transition-transform duration-300">
+                        <i class="fa-solid fa-diagram-project"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white mb-2 group-hover:text-indigo-400 transition-colors duration-300">Conversor Draw.io</h2>
+                    <p class="text-slate-400 text-sm leading-relaxed">Converta diagramas XML (.drawio) exportados do Draw.io para o formato JSON estruturado da Estella instantaneamente com engenharia reversa automática.</p>
+                </div>
+                <div class="flex items-center text-indigo-400 text-sm font-semibold mt-4">
+                    Acessar Módulo <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                </div>
+            </div>
+
+            <!-- PORTA C: GERADOR INTELIGENTE BPMN -->
+            <div id="btn-goto-generator" class="glass-card rounded-2xl p-8 cursor-pointer flex flex-col justify-between h-80 relative overflow-hidden group">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl group-hover:bg-emerald-500/20 transition-all duration-300"></div>
+                <div>
+                    <div class="w-14 h-14 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 text-2xl mb-6 border border-emerald-500/20 group-hover:scale-110 transition-transform duration-300">
+                        <i class="fa-solid fa-microphone-lines"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white mb-2 group-hover:text-emerald-400 transition-colors duration-300">Gerador Inteligente</h2>
+                    <p class="text-slate-400 text-sm leading-relaxed">Gere diagramas BPMN 2.0 completos por inteligência artificial. Descreva o chatbot por áudio, envie PDFs com regras ou digite uma descrição textual.</p>
+                </div>
+                <div class="flex items-center text-emerald-400 text-sm font-semibold mt-4">
+                    Acessar Módulo <i class="fa-solid fa-arrow-right ml-2 group-hover:translate-x-1 transition-transform"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MÓDULO A: ORÁCULO DE MANUTENÇÃO (CHAT & ANALYTICS) -->
+    <div id="module-oracle" class="hidden flex-1 flex flex-col h-full opacity-0 transition-opacity duration-300">
+        <!-- Top Nav -->
+        <header class="glass h-16 flex items-center justify-between px-6 z-10 shrink-0">
+            <div class="flex items-center gap-4">
+                <button class="btn-back text-slate-400 hover:text-white transition-colors">
+                    <i class="fa-solid fa-arrow-left text-lg"></i>
+                </button>
+                <div class="h-6 w-[1px] bg-slate-800"></div>
+                <h2 class="text-lg font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">Oráculo de Manutenção</h2>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-lg">
+                    <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Motor de IA:</label>
+                    <select class="model-selector bg-transparent text-slate-200 text-xs font-medium outline-none cursor-pointer">
+                        <option value="gemini:gemini-3.5-flash" class="bg-slate-950 text-slate-200">Gemini 3.5 Flash (Nuvem)</option>
+                        <option value="gemini:gemini-3.5-pro" class="bg-slate-950 text-slate-200">Gemini 3.5 Pro (Nuvem)</option>
+                        <option value="ollama:qwen2.5:3b" class="bg-slate-950 text-slate-200">Ollama - Qwen 2.5 (3B - Local)</option>
+                        <option value="ollama:llama3" class="bg-slate-950 text-slate-200">Ollama - Llama 3 (8B - Local)</option>
+                    </select>
+                </div>
+                <div class="relative overflow-hidden inline-block">
+                    <button class="bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-4 py-2 rounded-lg transition duration-200 flex items-center gap-2 shadow-lg shadow-blue-500/20">
+                        <i class="fa-solid fa-file-import"></i> Carregar JSON Estella
+                    </button>
+                    <input type="file" id="jsonUpload" accept=".json" class="absolute inset-0 opacity-0 cursor-pointer" />
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <div class="flex-1 flex overflow-hidden">
+            <!-- Left Panel: Chatbot Stats (w-80) -->
+            <div class="w-80 h-full border-r border-slate-800 bg-slate-950/20 flex flex-col p-6 overflow-y-auto gap-6 shrink-0">
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Arquivo de Fluxo</h3>
+                    <div class="glass-card rounded-xl p-4 flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                            <i class="fa-regular fa-file-code text-xl"></i>
+                        </div>
+                        <div class="truncate">
+                            <p id="loaded-filename" class="text-sm font-medium text-slate-200 truncate">Nenhum arquivo</p>
+                            <p id="loaded-status" class="text-xs text-slate-500">Aguardando JSON...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-1 flex flex-col gap-4">
+                    <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-1">Métricas de Engenharia</h3>
+                    
+                    <!-- Stat Card: total nodes -->
+                    <div class="glass p-4 rounded-xl flex justify-between items-center">
+                        <span class="text-sm text-slate-400">Nós de Fluxo</span>
+                        <span id="stat-nodes" class="text-xl font-bold text-blue-400">-</span>
+                    </div>
+
+                    <!-- Stat Card: total gateways -->
+                    <div class="glass p-4 rounded-xl flex justify-between items-center">
+                        <span class="text-sm text-slate-400">Gateways (Decisões)</span>
+                        <span id="stat-gateways" class="text-xl font-bold text-amber-400">-</span>
+                    </div>
+
+                    <!-- Stat Card: total edges -->
+                    <div class="glass p-4 rounded-xl flex justify-between items-center">
+                        <span class="text-sm text-slate-400">Conexões (Setas)</span>
+                        <span id="stat-edges" class="text-xl font-bold text-purple-400">-</span>
+                    </div>
+
+                    <!-- Stat Card: scripts -->
+                    <div class="glass p-4 rounded-xl flex justify-between items-center">
+                        <span class="text-sm text-slate-400">Scripts JS</span>
+                        <span id="stat-scripts" class="text-xl font-bold text-emerald-400">-</span>
+                    </div>
+
+                    <!-- Stat Card: APIs -->
+                    <div class="glass p-4 rounded-xl flex justify-between items-center">
+                        <span class="text-sm text-slate-400">Integrações de API</span>
+                        <span id="stat-apis" class="text-xl font-bold text-pink-400">-</span>
+                    </div>
+                </div>
+                
+                <!-- Notificação de Erro na Lateral -->
+                <div id="error-overlay" class="bg-red-900/30 border border-red-500/20 text-red-200 font-medium p-4 rounded-xl hidden items-center gap-3 z-50 animate-pulse">
+                    <i class="fa-solid fa-circle-exclamation text-lg text-red-500"></i>
+                    <span id="error-message" class="text-xs">Erro</span>
+                </div>
+            </div>
+
+            <!-- Right Panel: Full-screen Chat -->
+            <div id="chat-sidebar" class="flex-1 h-full glass flex flex-col">
+                <div class="p-4 border-b border-slate-800 flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                    <span class="font-semibold text-sm text-slate-200">Painel do Oráculo</span>
+                </div>
+
+                <!-- Mensagens do Chat -->
+                <div id="chat-messages" class="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
+                    <div class="bg-slate-800/40 border border-slate-800/60 rounded-xl p-6 text-center text-xs text-slate-400 italic max-w-md mx-auto my-auto shadow-inner">
+                        Faça o upload do fluxo em JSON para liberar o Oráculo. Faça perguntas sobre a lógica do robô ou anexe PDFs/Áudios para suporte completo.
+                    </div>
+                </div>
+
+                <!-- Área de Anexo de Mídia -->
+                <div id="attachment-preview" class="px-6 py-2 border-t border-slate-800 bg-slate-900/30 hidden flex-row justify-between items-center text-xs text-blue-400">
+                    <div class="flex items-center gap-2 truncate">
+                        <i class="fa-solid fa-paperclip"></i>
+                        <span id="attachment-name" class="truncate font-medium">arquivo.pdf</span>
+                    </div>
+                    <button id="btn-remove-attachment" class="text-slate-400 hover:text-red-400 transition-colors">
+                        <i class="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                </div>
+
+                <!-- Input e Botões -->
+                <div class="p-6 border-t border-slate-800 bg-slate-900/40">
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <input type="text" id="chat-input" placeholder="Suba um fluxo primeiro..." disabled
+                                class="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 text-slate-200 rounded-lg py-3 pl-4 pr-10 text-sm outline-none transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed" />
+                            <!-- Botão Anexar Mídia -->
+                            <label for="chat-file" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-400 cursor-pointer transition-colors disabled:opacity-50">
+                                <i class="fa-solid fa-paperclip"></i>
+                            </label>
+                            <input type="file" id="chat-file" accept=".pdf,audio/*" class="hidden" disabled />
+                        </div>
+                        <button id="chat-send" disabled
+                            class="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-800 disabled:text-slate-600 text-white px-6 rounded-lg font-medium transition duration-200 disabled:cursor-not-allowed">
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MÓDULO B: CONVERSOR DRAW.IO -->
+    <div id="module-converter" class="hidden flex-1 flex flex-col h-full opacity-0 transition-opacity duration-300">
+        <!-- Top Nav -->
+        <header class="glass h-16 flex items-center px-6 z-10 shrink-0 gap-4">
+            <button class="btn-back text-slate-400 hover:text-white transition-colors">
+                <i class="fa-solid fa-arrow-left text-lg"></i>
+            </button>
+            <div class="h-6 w-[1px] bg-slate-800"></div>
+            <h2 class="text-lg font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">Conversor Draw.io</h2>
+        </header>
+
+        <!-- Content Area -->
+        <div class="flex-1 flex items-center justify-center p-6">
+            <div class="w-full max-w-xl glass rounded-2xl p-8 flex flex-col items-center">
+                <div class="w-16 h-16 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 text-3xl mb-6 border border-indigo-500/20 shadow-inner">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                </div>
+                
+                <h3 class="text-2xl font-bold text-white text-center mb-2">Importar Diagrama</h3>
+                <p class="text-slate-400 text-sm text-center mb-8 max-w-sm">Arraste seu arquivo .drawio ou clique para fazer o upload e gerar o JSON estruturado da Estella.</p>
+
+                <!-- Área de Drag & Drop -->
+                <div id="dropzone" class="w-full h-48 border-2 border-dashed border-slate-700 hover:border-indigo-500/50 rounded-xl bg-slate-900/20 flex flex-col justify-center items-center cursor-pointer transition-all duration-300">
+                    <i class="fa-solid fa-file-invoice text-4xl text-slate-500 mb-3 group-hover:scale-110"></i>
+                    <span class="text-slate-300 text-sm font-medium">Selecione seu arquivo .drawio</span>
+                    <span class="text-slate-500 text-xs mt-1">Limites: XML / .drawio</span>
+                    <input type="file" id="drawioUpload" accept=".drawio,.xml" class="hidden" />
+                </div>
+
+                <!-- Processamento / Loading -->
+                <div id="converter-loading" class="hidden flex-col items-center mt-6">
+                    <div class="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-3"></div>
+                    <span class="text-sm text-slate-300">Convertendo diagramas e mapeando componentes...</span>
+                </div>
+
+                <!-- Download Box -->
+                <div id="download-box" class="hidden w-full flex-col items-center mt-8 p-4 bg-indigo-950/20 border border-indigo-500/20 rounded-xl animate-fade-in">
+                    <div class="flex items-center gap-3 mb-4 text-emerald-400">
+                        <i class="fa-regular fa-circle-check text-2xl animate-pulse"></i>
+                        <span class="text-sm font-semibold text-slate-200">Conversão realizada com sucesso!</span>
+                    </div>
+                    <a id="btn-download" href="#" download="fluxo_estella.json"
+                        class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-medium text-center py-3 rounded-lg shadow-lg shadow-indigo-500/20 transition duration-200 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-download"></i> Baixar JSON do Fluxo
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MÓDULO C: GERADOR INTELIGENTE BPMN -->
+    <div id="module-generator" class="hidden flex-1 flex flex-col h-full opacity-0 transition-opacity duration-300">
+        <!-- Top Nav -->
+        <header class="glass h-16 flex items-center justify-between px-6 z-10 shrink-0">
+            <div class="flex items-center gap-4">
+                <button class="btn-back text-slate-400 hover:text-white transition-colors">
+                    <i class="fa-solid fa-arrow-left text-lg"></i>
+                </button>
+                <div class="h-6 w-[1px] bg-slate-800"></div>
+                <h2 class="text-lg font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">Gerador Inteligente BPMN</h2>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-lg">
+                    <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Motor de IA:</label>
+                    <select class="model-selector bg-transparent text-slate-200 text-xs font-medium outline-none cursor-pointer">
+                        <option value="gemini:gemini-3.5-flash" class="bg-slate-950 text-slate-200">Gemini 3.5 Flash (Nuvem)</option>
+                        <option value="gemini:gemini-3.5-pro" class="bg-slate-950 text-slate-200">Gemini 3.5 Pro (Nuvem)</option>
+                        <option value="ollama:qwen2.5:3b" class="bg-slate-950 text-slate-200">Ollama - Qwen 2.5 (3B - Local)</option>
+                        <option value="ollama:llama3" class="bg-slate-950 text-slate-200">Ollama - Llama 3 (8B - Local)</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Area -->
+        <div class="flex-1 flex items-center justify-center p-6 overflow-y-auto">
+            <div class="w-full max-w-2xl glass rounded-2xl p-8 flex flex-col items-center">
+                <div class="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 text-3xl mb-6 border border-emerald-500/20 shadow-inner">
+                    <i class="fa-solid fa-microchip"></i>
+                </div>
+                
+                <h3 class="text-2xl font-bold text-white text-center mb-2">Descreva seu Chatbot</h3>
+                <p class="text-slate-400 text-sm text-center mb-6 max-w-md">Envie um arquivo de áudio narrando as regras, anexe um PDF/imagem de referência ou descreva o fluxo por texto.</p>
+
+                <!-- Input Text Descritivo -->
+                <div class="w-full mb-6">
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Descrição do Fluxo (Texto)</label>
+                    <textarea id="generator-text" rows="4" placeholder="Ex: Comece com uma saudação. Apresente duas opções: Vendas e Suporte. Se for Vendas, exiba mensagem de contato. Se for Suporte, faça uma requisição HTTP para a API de fila e encerre o chat."
+                        class="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 text-slate-200 rounded-lg p-3 text-sm outline-none transition duration-200 resize-none"></textarea>
+                </div>
+
+                <!-- Área de Drag & Drop para Mídias -->
+                <div id="generator-dropzone" class="w-full h-32 border-2 border-dashed border-slate-700 hover:border-emerald-500/50 rounded-xl bg-slate-900/20 flex flex-col justify-center items-center cursor-pointer transition-all duration-300 mb-6">
+                    <i class="fa-solid fa-file-audio text-3xl text-slate-500 mb-2"></i>
+                    <span id="generator-dropzone-label" class="text-slate-300 text-sm font-medium">Selecione ou arraste um Áudio, PDF ou Imagem</span>
+                    <span class="text-slate-500 text-xs mt-1">Formatos: MP3, WAV, PDF, PNG, JPG</span>
+                    <input type="file" id="generator-media-upload" accept="audio/*,.pdf,image/*" class="hidden" />
+                </div>
+
+                <!-- Botão de Ação -->
+                <button id="btn-generate-flow"
+                    class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium text-center py-3 rounded-lg shadow-lg shadow-emerald-500/20 transition duration-200 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-gears"></i> Gerar Diagrama BPMN 2.0
+                </button>
+
+                <!-- Processamento / Loading -->
+                <div id="generator-loading" class="hidden flex-col items-center mt-6">
+                    <div class="w-10 h-10 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-3"></div>
+                    <span class="text-sm text-slate-300">Analisando entradas com IA e desenhando BPMN...</span>
+                </div>
+
+                <!-- Download Box -->
+                <div id="generator-download-box" class="hidden w-full flex-col items-center mt-8 p-4 bg-emerald-950/20 border border-emerald-500/20 rounded-xl animate-fade-in">
+                    <div class="flex items-center gap-3 mb-4 text-emerald-400">
+                        <i class="fa-regular fa-circle-check text-2xl animate-pulse"></i>
+                        <span class="text-sm font-semibold text-slate-200">BPMN 2.0 gerado com sucesso!</span>
+                    </div>
+                    <a id="btn-generator-download" href="#" download="fluxo_gerado.bpmn"
+                        class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-center py-3 rounded-lg shadow-lg shadow-emerald-500/20 transition duration-200 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-download"></i> Baixar Arquivo BPMN (.bpmn)
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
