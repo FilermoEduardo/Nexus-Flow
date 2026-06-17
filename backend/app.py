@@ -51,7 +51,10 @@ FLOW_SCHEMA = {
             "name": {"type": "string"},
             "source": {"type": ["integer", "string"]},
             "target": {"type": ["integer", "string"]},
-            "value": {"type": "string"}
+            "value": {"type": "string"},
+            "lane": {"type": "string"},
+            "task_type": {"type": "string", "enum": ["user", "service", "manual", "script", "send", "receive"]},
+            "event_type": {"type": "string", "enum": ["timer", "error", "terminate", "message"]}
         },
         "required": ["id"]
     }
@@ -259,7 +262,7 @@ def chat():
         # Filtrar propriedades visuais para economizar tokens
         clean_flow = []
         if isinstance(flow_data, list):
-            logical_keys = ['id', 'parent', 'edge', 'source', 'target', 'cod_componente', 'value', 'data']
+            logical_keys = ['id', 'parent', 'edge', 'source', 'target', 'cod_componente', 'value', 'data', 'lane', 'task_type', 'event_type']
             for node in flow_data:
                 cleaned_node = {k: node[k] for k in logical_keys if k in node}
                 clean_flow.append(cleaned_node)
@@ -357,7 +360,7 @@ def chat_stream():
 
         clean_flow = []
         if isinstance(flow_data, list):
-            logical_keys = ['id', 'parent', 'edge', 'source', 'target', 'cod_componente', 'value', 'data']
+            logical_keys = ['id', 'parent', 'edge', 'source', 'target', 'cod_componente', 'value', 'data', 'lane', 'task_type', 'event_type']
             for node in flow_data:
                 cleaned_node = {k: node[k] for k in logical_keys if k in node}
                 clean_flow.append(cleaned_node)
@@ -450,26 +453,47 @@ def generate_multimodal():
         system_instruction = (
             "Você é um arquiteto especialista em Chatbots e engenharia de processos BPMN 2.0. "
             "Sua tarefa é analisar a descrição enviada (seja em áudio, imagem, PDF ou texto) e convertê-la estruturalmente em um fluxo de atendimento para chatbot. "
-            "Você deve retornar a resposta estritamente em formato JSON no esquema detalhado abaixo. "
-            "Esquema JSON esperado:\n"
+            "Você deve retornar a resposta estritamente em formato JSON no esquema detalhado abaixo.\n\n"
+            "🚨 DIRETRIZ DE DETALHAMENTO (NÃO SIMPLIFICAR / COMPREENSIVIDADE):\n"
+            "- Não simplifique, resuma ou omita etapas da descrição do usuário. Cada ação, mensagem, decisão, checagem, validação, chamada de API e script citado deve virar um nó no fluxo JSON.\n"
+            "- Se o usuário citar IDs específicos (ex: ID: 13, ID: 49), mapeie exatamente esse valor no campo \"id\" do nó correspondente para manter rastreabilidade.\n"
+            "- Modele todas as ramificações de sucesso e caminhos alternativos/tratamentos de erro detalhadamente.\n\n"
+            "REGRAS DE ESTRUTURA DO JSON:\n"
+            "1. Nós (Nós de Atividade/Evento/Decisão):\n"
+            "   - \"id\": ID inteiro incremental único (ex: 1, 2, 3).\n"
+            "   - \"parent\": ID do nó imediatamente anterior no fluxo principal. O nó de início (Start Event) deve ter parent = null.\n"
+            "   - \"edge\": 0 (indica que é um nó).\n"
+            "   - \"cod_componente\": 1 para Início/Fim do fluxo (Eventos), 15 para Gateways de decisão/bifurcações, 9 para requisições de API/HTTP, 19 para scripts de processamento local, 17 para caixas de mensagens ou ações comuns (Tasks).\n"
+            "   - \"name\": Nome resumido do nó (deve seguir as Regras Gramaticais de nomeação abaixo).\n"
+            "   - \"lane\": Nome do papel, setor ou ator responsável (ex: 'Cliente', 'Suporte Técnico', 'Sistema'). Se usar raias, classifique TODOS os nós do fluxo nas raias correspondentes.\n"
+            "   - \"task_type\" (obrigatório apenas para cod_componente: 17): Classificação técnica da tarefa. Valores aceitos: user (ação humana), service (chamada de API/serviço), manual (atividade fora do sistema), script (cálculo/script local), send (envio de mensagem ativa), receive (espera de entrada/mensagem).\n"
+            "   - \"event_type\" (obrigatório apenas para eventos, cod_componente: 1 ou 11): Classificação técnica do evento. Valores aceitos: timer (tempo/timeout), error (fluxo de erro), terminate (fim total do processo), message (recebimento de mensagem externa).\n\n"
+            "2. Conexões/Setas (Edges):\n"
+            "   - \"id\": ID string único (ex: 'edge_1').\n"
+            "   - \"edge\": 1 (indica que é uma conexão).\n"
+            "   - \"source\": ID do nó de origem da conexão.\n"
+            "   - \"target\": ID do nó de destino da conexão.\n"
+            "   - \"value\": Condição ou rótulo do caminho (ex: 'Sim', 'Não', 'Opção 1', 'Sucesso'). Deve ser vazio para fluxos diretos.\n\n"
+            "🚨 REGRAS DE RAMIFICAÇÃO (GATEWAYS):\n"
+            "- Para criar bifurcações/decisões, utilize um nó de Gateway ('cod_componente': 15).\n"
+            "- O gateway deve ter múltiplas conexões de saída (edges onde 'source' é o ID do gateway, apontando para diferentes nós 'target'). Cada uma dessas conexões deve possuir seu respectivo 'value' descrevendo o caminho da ramificação (ex: 'Sim' na conexão para o nó A, e 'Não' na conexão para o nó B).\n"
+            "- Para fundir caminhos alternativos que se reúnem (convergência/merge), crie conexões (edges) dos últimos nós de cada caminho de volta para o mesmo nó de destino comum.\n\n"
+            "🚨 REGRAS GRAMATICAIS E SEMÂNTICAS DE NOMEAÇÃO:\n"
+            "1. **Para Tarefas/Ações** (cod_componente: 17, 9, 19): o campo 'name' deve OBRIGATORIAMENTE começar com um verbo no infinitivo (ex: 'Enviar mensagem', 'Verificar histórico', 'Solicitar dados').\n"
+            "2. **Para Eventos** (início, fim ou intermediários, cod_componente: 1 ou 11): o campo 'name' deve OBRIGATORIAMENTE começar com um verbo no particípio (ex: 'Iniciado atendimento', 'Finalizado com sucesso', 'Aguardado timeout').\n\n"
+            "Exemplo de JSON estruturado e ramificado esperado:\n"
             "{\n"
             "  \"flow\": [\n"
-            "    {\n"
-            "      \"id\": 1, // ID inteiro incremental único para o nó\n"
-            "      \"parent\": null, // ID do nó anterior. O nó inicial de saudação deve ter parent = null\n"
-            "      \"edge\": 0, // Identifica que é um nó\n"
-            "      \"cod_componente\": 17, // 1 para Início/Fim do fluxo, 15 para Gateways de decisão/bifurcações, 9 para requisições de API/HTTP, 17 para caixas de mensagens comuns\n"
-            "      \"name\": \"Texto curto resumindo a ação do bloco\" // Ex: 'Saudação', 'Escolha de Menu', 'Consultar CPF', 'Resposta Suporte'\n"
-            "    },\n"
-            "    {\n"
-            "      \"id\": \"edge_1\", // ID da conexão\n"
-            "      \"edge\": 1, // Identifica que é uma conexão/seta\n"
-            "      \"source\": 1, // ID do nó de origem\n"
-            "      \"target\": 2, // ID do nó de destino\n"
-            "      \"value\": \"Opção Escolhida\" // Condição ou label da conexão (ex: 'Sim', 'Não', 'Opção 1', 'Sucesso'). Vazio se for fluxo direto.\n"
-            "    }\n"
+            "    { \"id\": 1, \"parent\": null, \"edge\": 0, \"cod_componente\": 1, \"lane\": \"Cliente\", \"name\": \"Iniciado atendimento\" },\n"
+            "    { \"id\": 2, \"parent\": 1, \"edge\": 0, \"cod_componente\": 17, \"task_type\": \"user\", \"lane\": \"Cliente\", \"name\": \"Fornecer CPF\" },\n"
+            "    { \"id\": 3, \"parent\": 2, \"edge\": 0, \"cod_componente\": 17, \"task_type\": \"service\", \"lane\": \"Sistema\", \"name\": \"Validar cadastro\" },\n"
+            "    { \"id\": 4, \"parent\": 3, \"edge\": 0, \"cod_componente\": 15, \"lane\": \"Sistema\", \"name\": \"Verificar resultado da validação\" },\n"
+            "    { \"id\": 5, \"parent\": 4, \"edge\": 0, \"cod_componente\": 17, \"task_type\": \"send\", \"lane\": \"Sistema\", \"name\": \"Apresentar menu principal\" },\n"
+            "    { \"id\": 6, \"parent\": 4, \"edge\": 0, \"cod_componente\": 1, \"event_type\": \"error\", \"lane\": \"Sistema\", \"name\": \"Finalizado com erro\" },\n"
+            "    { \"id\": \"edge_1\", \"edge\": 1, \"source\": 4, \"target\": 5, \"value\": \"Sucesso\" },\n"
+            "    { \"id\": \"edge_2\", \"edge\": 1, \"source\": 4, \"target\": 6, \"value\": \"Falha\" }\n"
             "  ]\n"
-            "}\n"
+            "}\n\n"
             "Gere apenas o JSON puro, sem blocos de código markdown ou texto explicativo extra."
         )
         
@@ -558,26 +582,47 @@ def refine_flow():
             "Você é um arquiteto especialista em Chatbots e engenharia de processos BPMN 2.0.\n"
             "Sua tarefa é receber o JSON de um fluxo de chatbot existente e uma instrução de refinamento/modificação do usuário.\n"
             "Você deve aplicar a modificação solicitada no fluxo atual e retornar o JSON COMPLETO E ATUALIZADO do fluxo.\n"
-            "Busque manter ao máximo a compatibilidade com os IDs e nós anteriores que não foram alterados.\n"
-            "Esquema JSON esperado:\n"
+            "Busque manter ao máximo a compatibilidade com os IDs e nós anteriores que não foram alterados.\n\n"
+            "🚨 DIRETRIZ DE DETALHAMENTO (NÃO SIMPLIFICAR / COMPREENSIVIDADE):\n"
+            "- Não simplifique, resuma ou omita etapas da descrição ou instrução de alteração. Mantenha todos os nós detalhados do fluxo. Cada ação, mensagem, decisão, checagem, validação, chamada de API e script deve virar um nó no fluxo JSON.\n"
+            "- Se o usuário citar IDs específicos (ex: ID: 13, ID: 49), mapeie exatamente esse valor no campo \"id\" do nó correspondente para manter rastreabilidade.\n"
+            "- Modele todas as ramificações de sucesso e caminhos alternativos/tratamentos de erro detalhadamente.\n\n"
+            "REGRAS DE ESTRUTURA DO JSON:\n"
+            "1. Nós (Nós de Atividade/Evento/Decisão):\n"
+            "   - \"id\": ID do nó (deve manter o ID original caso o nó já existisse).\n"
+            "   - \"parent\": ID do nó imediatamente anterior no fluxo principal. O nó de início (Start Event) deve ter parent = null.\n"
+            "   - \"edge\": 0 (indica que é um nó).\n"
+            "   - \"cod_componente\": 1 para Início/Fim do fluxo (Eventos), 15 para Gateways de decisão/bifurcações, 9 para requisições de API/HTTP, 19 para scripts de processamento local, 17 para caixas de mensagens ou ações comuns (Tasks).\n"
+            "   - \"name\": Nome resumido do nó (deve seguir as Regras Gramaticais de nomeação abaixo).\n"
+            "   - \"lane\": Nome do papel, setor ou ator responsável (ex: 'Cliente', 'Suporte Técnico', 'Sistema'). Se usar raias, classifique TODOS os nós do fluxo nas raias correspondentes.\n"
+            "   - \"task_type\" (obrigatório apenas para cod_componente: 17): Classificação técnica da tarefa. Valores aceitos: user (ação humana), service (chamada de API/serviço), manual (atividade fora do sistema), script (cálculo/script local), send (envio de mensagem ativa), receive (espera de entrada/mensagem).\n"
+            "   - \"event_type\" (obrigatório apenas para eventos, cod_componente: 1 ou 11): Classificação técnica do evento. Valores aceitos: timer (tempo/timeout), error (fluxo de erro), terminate (fim total do processo), message (recebimento de mensagem externa).\n\n"
+            "2. Conexões/Setas (Edges):\n"
+            "   - \"id\": ID string único (ex: 'edge_1').\n"
+            "   - \"edge\": 1 (indica que é uma conexão).\n"
+            "   - \"source\": ID do nó de origem da conexão.\n"
+            "   - \"target\": ID do nó de destino da conexão.\n"
+            "   - \"value\": Condição ou rótulo do caminho (ex: 'Sim', 'Não', 'Opção 1', 'Sucesso'). Deve ser vazio para fluxos diretos.\n\n"
+            "🚨 REGRAS DE RAMIFICAÇÃO (GATEWAYS):\n"
+            "- Para criar bifurcações/decisões, utilize um nó de Gateway ('cod_componente': 15).\n"
+            "- O gateway deve ter múltiplas conexões de saída (edges onde 'source' é o ID do gateway, apontando para diferentes nós 'target'). Cada uma dessas conexões deve possuir seu respectivo 'value' descrevendo o caminho da ramificação (ex: 'Sim' na conexão para o nó A, e 'Não' na conexão para o nó B).\n"
+            "- Para fundir caminhos alternativos que se reúnem (convergência/merge), crie conexões (edges) dos últimos nós de cada caminho de volta para o mesmo nó de destino comum.\n\n"
+            "🚨 REGRAS GRAMATICAIS E SEMÂNTICAS DE NOMEAÇÃO:\n"
+            "1. **Para Tarefas/Ações** (cod_componente: 17, 9, 19): o campo 'name' deve OBRIGATORIAMENTE começar com um verbo no infinitivo (ex: 'Enviar mensagem', 'Verificar histórico', 'Solicitar dados').\n"
+            "2. **Para Eventos** (início, fim ou intermediários, cod_componente: 1 ou 11): o campo 'name' deve OBRIGATORIAMENTE começar com um verbo no particípio (ex: 'Iniciado atendimento', 'Finalizado com sucesso', 'Aguardado timeout').\n\n"
+            "Exemplo de JSON estruturado e ramificado esperado:\n"
             "{\n"
             "  \"flow\": [\n"
-            "    {\n"
-            "      \"id\": 1, // ID do nó\n"
-            "      \"parent\": null,\n"
-            "      \"edge\": 0,\n"
-            "      \"cod_componente\": 17,\n"
-            "      \"name\": \"Saudação\"\n"
-            "    },\n"
-            "    {\n"
-            "      \"id\": \"edge_1\",\n"
-            "      \"edge\": 1,\n"
-            "      \"source\": 1,\n"
-            "      \"target\": 2,\n"
-            "      \"value\": \"Opção Escolhida\"\n"
-            "    }\n"
+            "    { \"id\": 1, \"parent\": null, \"edge\": 0, \"cod_componente\": 1, \"lane\": \"Cliente\", \"name\": \"Iniciado atendimento\" },\n"
+            "    { \"id\": 2, \"parent\": 1, \"edge\": 0, \"cod_componente\": 17, \"task_type\": \"user\", \"lane\": \"Cliente\", \"name\": \"Fornecer CPF\" },\n"
+            "    { \"id\": 3, \"parent\": 2, \"edge\": 0, \"cod_componente\": 17, \"task_type\": \"service\", \"lane\": \"Sistema\", \"name\": \"Validar cadastro\" },\n"
+            "    { \"id\": 4, \"parent\": 3, \"edge\": 0, \"cod_componente\": 15, \"lane\": \"Sistema\", \"name\": \"Verificar resultado da validação\" },\n"
+            "    { \"id\": 5, \"parent\": 4, \"edge\": 0, \"cod_componente\": 17, \"task_type\": \"send\", \"lane\": \"Sistema\", \"name\": \"Apresentar menu principal\" },\n"
+            "    { \"id\": 6, \"parent\": 4, \"edge\": 0, \"cod_componente\": 1, \"event_type\": \"error\", \"lane\": \"Sistema\", \"name\": \"Finalizado com erro\" },\n"
+            "    { \"id\": \"edge_1\", \"edge\": 1, \"source\": 4, \"target\": 5, \"value\": \"Sucesso\" },\n"
+            "    { \"id\": \"edge_2\", \"edge\": 1, \"source\": 4, \"target\": 6, \"value\": \"Falha\" }\n"
             "  ]\n"
-            "}\n"
+            "}\n\n"
             "Gere apenas o JSON puro, sem blocos de código markdown ou texto explicativo extra."
         )
         

@@ -889,11 +889,7 @@ btnGenerateFlow.addEventListener('click', async () => {
 btnExportSvg.addEventListener('click', () => {
     if (!bpmnViewer) return;
     
-    bpmnViewer.saveSVG((err, svg) => {
-        if (err) {
-            alert("Erro ao exportar SVG: " + err);
-            return;
-        }
+    bpmnViewer.saveSVG().then(({ svg }) => {
         const blob = new Blob([svg], { type: 'image/svg+xml' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -903,6 +899,8 @@ btnExportSvg.addEventListener('click', () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }).catch(err => {
+        alert("Erro ao exportar SVG: " + err);
     });
 });
 
