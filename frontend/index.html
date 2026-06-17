@@ -78,6 +78,8 @@
     <script src="https://unpkg.com/bpmn-js@17.0.2/dist/bpmn-navigated-viewer.development.js"></script>
     <!-- marked.js (Markdown parser) CDN -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- jsPDF (PDF export) CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body class="h-full flex flex-col font-sans overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-blue-950">
 
@@ -88,7 +90,7 @@
             </h1>
             <p class="text-slate-400 text-lg max-w-md mx-auto">A plataforma definitiva para diagnóstico, visualização e engenharia reversa de chatbots legados.</p>
         </div>
-        <div class="grid md:grid-cols-3 gap-8 w-full max-w-6xl px-4">
+        <div class="grid md:grid-cols-2 gap-8 w-full max-w-4xl px-4">
             <!-- PORTA A: ORÁCULO DE MANUTENÇÃO -->
             <div id="btn-goto-oracle" class="glass-card rounded-2xl p-8 cursor-pointer flex flex-col justify-between h-80 relative overflow-hidden group">
                 <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-300"></div>
@@ -105,7 +107,7 @@
             </div>
  
             <!-- PORTA B: CONVERSOR DRAW.IO -->
-            <div id="btn-goto-converter" class="glass-card rounded-2xl p-8 cursor-pointer flex flex-col justify-between h-80 relative overflow-hidden group">
+            <div id="btn-goto-converter" class="hidden glass-card rounded-2xl p-8 cursor-pointer flex flex-col justify-between h-80 relative overflow-hidden group">
                 <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all duration-300"></div>
                 <div>
                     <div class="w-14 h-14 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 text-2xl mb-6 border border-indigo-500/20 group-hover:scale-110 transition-transform duration-300">
@@ -153,8 +155,12 @@
                 <div class="flex items-center gap-2 bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-lg">
                     <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Motor de IA:</label>
                     <select class="model-selector bg-transparent text-slate-200 text-xs font-medium outline-none cursor-pointer">
-                        <option value="gemini:gemini-3.5-flash" class="bg-slate-950 text-slate-200">Gemini 3.5 Flash (Nuvem)</option>
-                        <option value="gemini:gemini-3.5-pro" class="bg-slate-950 text-slate-200">Gemini 3.5 Pro (Nuvem)</option>
+                        <option value="gemini:gemini-flash-lite-latest" class="bg-slate-950 text-slate-200" selected>Gemini Flash Lite (Nuvem - Alta Cota)</option>
+                        <option value="gemini:gemini-3.1-flash-lite" class="bg-slate-950 text-slate-200">Gemini 3.1 Flash Lite (Nuvem - Alta Cota)</option>
+                        <option value="gemini:gemini-flash-latest" class="bg-slate-950 text-slate-200">Gemini Flash (Nuvem - Cota Limitada)</option>
+                        <option value="gemini:gemini-2.0-flash-lite" class="bg-slate-950 text-slate-200">Gemini 2.0 Flash Lite (Nuvem)</option>
+                        <option value="gemini:gemini-3.5-flash" class="bg-slate-950 text-slate-200">Gemini 3.5 Flash (Nuvem - Exp.)</option>
+                        <option value="gemini:gemini-3.5-pro" class="bg-slate-950 text-slate-200">Gemini 3.5 Pro (Nuvem - Exp.)</option>
                         <option value="ollama:qwen2.5:3b" class="bg-slate-950 text-slate-200">Ollama - Qwen 2.5 (3B - Local)</option>
                         <option value="ollama:llama3" class="bg-slate-950 text-slate-200">Ollama - Llama 3 (8B - Local)</option>
                     </select>
@@ -228,9 +234,19 @@
 
             <!-- Right Panel: Full-screen Chat -->
             <div id="chat-sidebar" class="flex-1 h-full glass flex flex-col">
-                <div class="p-4 border-b border-slate-800 flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                    <span class="font-semibold text-sm text-slate-200">Painel do Oráculo</span>
+                <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                        <span class="font-semibold text-sm text-slate-200">Painel do Oráculo</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="btn-clear-chat" class="hidden text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium px-3 py-1.5 rounded-lg border border-slate-700 transition duration-155 flex items-center gap-1.5 shadow-md">
+                            <i class="fa-solid fa-trash-can text-red-400"></i> Limpar Chat
+                        </button>
+                        <button id="btn-export-pdf" class="hidden text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium px-3 py-1.5 rounded-lg border border-slate-700 transition duration-155 flex items-center gap-1.5 shadow-md">
+                            <i class="fa-solid fa-file-pdf text-red-400"></i> Exportar Conversa
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Mensagens do Chat -->
@@ -340,8 +356,12 @@
                 <div class="flex items-center gap-2 bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-lg">
                     <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Motor de IA:</label>
                     <select class="model-selector bg-transparent text-slate-200 text-xs font-medium outline-none cursor-pointer">
-                        <option value="gemini:gemini-3.5-flash" class="bg-slate-950 text-slate-200">Gemini 3.5 Flash (Nuvem)</option>
-                        <option value="gemini:gemini-3.5-pro" class="bg-slate-950 text-slate-200">Gemini 3.5 Pro (Nuvem)</option>
+                        <option value="gemini:gemini-flash-lite-latest" class="bg-slate-950 text-slate-200" selected>Gemini Flash Lite (Nuvem - Alta Cota)</option>
+                        <option value="gemini:gemini-3.1-flash-lite" class="bg-slate-950 text-slate-200">Gemini 3.1 Flash Lite (Nuvem - Alta Cota)</option>
+                        <option value="gemini:gemini-flash-latest" class="bg-slate-950 text-slate-200">Gemini Flash (Nuvem - Cota Limitada)</option>
+                        <option value="gemini:gemini-2.0-flash-lite" class="bg-slate-950 text-slate-200">Gemini 2.0 Flash Lite (Nuvem)</option>
+                        <option value="gemini:gemini-3.5-flash" class="bg-slate-950 text-slate-200">Gemini 3.5 Flash (Nuvem - Exp.)</option>
+                        <option value="gemini:gemini-3.5-pro" class="bg-slate-950 text-slate-200">Gemini 3.5 Pro (Nuvem - Exp.)</option>
                         <option value="ollama:qwen2.5:3b" class="bg-slate-950 text-slate-200">Ollama - Qwen 2.5 (3B - Local)</option>
                         <option value="ollama:llama3" class="bg-slate-950 text-slate-200">Ollama - Llama 3 (8B - Local)</option>
                     </select>
@@ -386,16 +406,42 @@
                     <span class="text-sm text-slate-300">Analisando entradas com IA e desenhando BPMN...</span>
                 </div>
 
-                <!-- Download Box -->
-                <div id="generator-download-box" class="hidden w-full flex-col items-center mt-8 p-4 bg-emerald-950/20 border border-emerald-500/20 rounded-xl animate-fade-in">
+                <!-- Download & Preview Box -->
+                <div id="generator-download-box" class="hidden w-full flex flex-col items-center mt-8 p-4 bg-emerald-950/20 border border-emerald-500/20 rounded-xl animate-fade-in">
                     <div class="flex items-center gap-3 mb-4 text-emerald-400">
                         <i class="fa-regular fa-circle-check text-2xl animate-pulse"></i>
                         <span class="text-sm font-semibold text-slate-200">BPMN 2.0 gerado com sucesso!</span>
                     </div>
-                    <a id="btn-generator-download" href="#" download="fluxo_gerado.bpmn"
-                        class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-center py-3 rounded-lg shadow-lg shadow-emerald-500/20 transition duration-200 flex items-center justify-center gap-2">
-                        <i class="fa-solid fa-download"></i> Baixar Arquivo BPMN (.bpmn)
-                    </a>
+                    
+                    <!-- Canvas de visualização do BPMN -->
+                    <div id="bpmn-canvas" class="w-full h-80 bg-slate-900/80 border border-slate-800 rounded-xl mb-4 relative overflow-hidden"></div>
+                    
+                    <div class="flex gap-2 w-full mb-4">
+                        <a id="btn-generator-download" href="#" download="fluxo_gerado.bpmn"
+                            class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-center py-2.5 rounded-lg shadow-lg shadow-emerald-500/20 transition duration-200 flex items-center justify-center gap-2 text-sm">
+                            <i class="fa-solid fa-download"></i> Baixar XML (.bpmn)
+                        </a>
+                        <button id="btn-export-svg"
+                            class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-center py-2.5 rounded-lg transition duration-200 flex items-center justify-center gap-2 text-sm">
+                            <i class="fa-solid fa-file-image text-emerald-400"></i> Exportar SVG
+                        </button>
+                    </div>
+
+                    <!-- Chat de Refinamento Iterativo -->
+                    <div class="w-full border-t border-slate-800 pt-4 mt-2">
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Ajustar o Fluxo com IA</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="refine-input" placeholder="Ex: Adicione uma validação de CPF depois do nó 3..."
+                                class="flex-1 bg-slate-950 border border-slate-800 focus:border-emerald-500 text-slate-200 rounded-lg py-2.5 px-4 text-xs outline-none transition duration-200" />
+                            <button id="btn-refine" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg font-medium text-xs transition duration-200 flex items-center gap-1.5 shadow-md">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Ajustar
+                            </button>
+                        </div>
+                        <div id="refine-loading" class="hidden flex items-center gap-2 mt-2 text-xs text-slate-400">
+                            <div class="w-3 h-3 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
+                            <span>Processando alterações no fluxo...</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
