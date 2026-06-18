@@ -155,11 +155,10 @@ async function checkAllModelsStatus() {
     }
 }
 
-// Executa o check inicial e agenda polling a cada 60 segundos
+// Executa o check inicial na carga do DOM
 document.addEventListener('DOMContentLoaded', () => {
     checkAllModelsStatus();
 });
-setInterval(checkAllModelsStatus, 60000);
 
 // ==========================================
 // 1. LÓGICA DE NAVEGAÇÃO E TRANSIÇÕES (SPA)
@@ -523,6 +522,7 @@ async function sendChatMessage() {
         btnExportPdf.classList.remove('hidden');
         btnClearChat.classList.remove('hidden');
 
+        let streamError = null;
         while (true) {
             const { value, done } = await reader.read();
             if (done) break;
@@ -539,7 +539,8 @@ async function sendChatMessage() {
                             if (parsedData.retry_after && parsedData.model) {
                                 handleModelQuotaExceeded(parsedData.model, parsedData.retry_after, parsedData.quota_type);
                             }
-                            throw new Error(parsedData.error);
+                            streamError = parsedData.error;
+                            break;
                         }
                         
                         if (parsedData.token) {
@@ -559,6 +560,13 @@ async function sendChatMessage() {
                         console.warn("Parse parcial falhou:", e);
                     }
                 }
+            }
+            if (streamError) {
+                // Remove o balão vazio criado se ocorreu erro antes de receber tokens
+                if (aiMessageDiv && aiMessageDiv.parentNode) {
+                    chatMessages.removeChild(aiMessageDiv);
+                }
+                throw new Error(streamError);
             }
         }
 

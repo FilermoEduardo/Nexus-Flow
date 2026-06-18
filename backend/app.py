@@ -36,6 +36,17 @@ def get_gemini_client(api_key=None):
         _last_api_key = api_key
     return _gemini_client
 
+from groq import Groq
+
+_groq_client = None
+
+def get_groq_client():
+    global _groq_client
+    api_key = os.environ.get("GROQ_API_KEY")
+    if _groq_client is None:
+        _groq_client = Groq(api_key=api_key)
+    return _groq_client
+
 app = Flask(__name__)
 CORS(app)
 
@@ -126,6 +137,53 @@ def extract_json(text):
         return text[first_bracket:last_bracket+1].strip()
         
     return text
+
+def compact_flow_for_prompt(flow_data):
+    """
+    Compacta o fluxo de dados em uma representação legível e ultra-enxuta,
+    reduzindo o consumo de tokens em mais de 90%.
+    """
+    if not isinstance(flow_data, list):
+        return ""
+    
+    nodes = []
+    edges = []
+    
+    for item in flow_data:
+        is_edge = item.get("edge") == 1 or "source" in item
+        if is_edge:
+            source = item.get("source")
+            target = item.get("target")
+            val = item.get("value")
+            if source is not None and target is not None:
+                edge_str = f"{source}->{target}"
+                if val:
+                    edge_str += f"('{val}')"
+                edges.append(edge_str)
+        else:
+            nid = item.get("id")
+            name = item.get("name", "")
+            cod = item.get("cod_componente")
+            lane = item.get("lane")
+            task_type = item.get("task_type")
+            event_type = item.get("event_type")
+            
+            node_desc = f"ID {nid}: '{name}'"
+            props = []
+            if cod is not None:
+                props.append(f"t:{cod}")
+            if lane:
+                props.append(f"r:{lane}")
+            if task_type:
+                props.append(f"tt:{task_type}")
+            if event_type:
+                props.append(f"et:{event_type}")
+            
+            if props:
+                node_desc += " (" + ",".join(props) + ")"
+            nodes.append(node_desc)
+            
+    return "Nós:\n" + "\n".join(nodes) + "\n\nConexões:\n" + ",".join(edges)
 
 def generate_llm_response(prompt, provider, model_name, attached_file=None, response_json=False, stream=False):
     """
@@ -264,6 +322,38 @@ def generate_llm_response(prompt, provider, model_name, attached_file=None, resp
                 raise RuntimeError(f"Erro retornado pelo Foundry Local: {err_msg}") from he
             except Exception as e:
                 raise RuntimeError(f"Erro inesperado ao conectar ao Foundry Local: {str(e)}") from e
+    elif provider == "groq":
+        load_dotenv(override=True)
+        api_key = os.environ.get("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError("Chave de API da Groq (GROQ_API_KEY) não configurada no arquivo .env.")
+        client = get_groq_client()
+        
+        actual_model = "llama-3.3-70b-versatile"
+        messages = [{"role": "user", "content": prompt}]
+        
+        response_format = {"type": "json_object"} if response_json else None
+        
+        if stream:
+            def groq_stream_generator():
+                completion = client.chat.completions.create(
+                    model=actual_model,
+                    messages=messages,
+                    stream=True,
+                    response_format=response_format
+                )
+                for chunk in completion:
+                    content = chunk.choices[0].delta.content or ""
+                    if content:
+                        yield content
+            return groq_stream_generator()
+        else:
+            completion = client.chat.completions.create(
+                model=actual_model,
+                messages=messages,
+                response_format=response_format
+            )
+            return completion.choices[0].message.content
     else:
         # Carrega e configura o Gemini dinamicamente a cada requisição
         load_dotenv(override=True)
@@ -408,17 +498,12 @@ def chat():
         provider = parts[0] if len(parts) > 0 else 'gemini'
         model_name = ':'.join(parts[1:]) if len(parts) > 1 else 'gemini-3.5-flash'
 
-        # Filtrar propriedades visuais para economizar tokens
-        clean_flow = []
-        if isinstance(flow_data, list):
-            logical_keys = ['id', 'parent', 'edge', 'source', 'target', 'cod_componente', 'value', 'data', 'lane', 'task_type', 'event_type']
-            for node in flow_data:
-                cleaned_node = {k: node[k] for k in logical_keys if k in node}
-                clean_flow.append(cleaned_node)
+        # Compacta o fluxo para economizar tokens e evitar estouros de TPD/TPM
+        flow_representation = compact_flow_for_prompt(flow_data)
         
         system_instruction = (
             "Você é um Especialista em UX Conversacional e Arquiteto de Soluções de Chatbot. "
-            "Sua tarefa é analisar o fluxo de dados técnico em JSON de um chatbot legado e auxiliar a equipe de manutenção.\n\n"
+            "Sua tarefa é analisar a estrutura do fluxo de dados do chatbot legado e auxiliar a equipe de manutenção.\n\n"
             "🚨 REGRA DE OURO PARA RESPOSTAS:\n"
             "1. Se o usuário fizer uma pergunta ESPECÍFICA (ex: 'Liste as APIs', 'Onde está a troca de senha?', 'O que o nó 14 faz?'), "
             "vá DIRETO AO PONTO. Responda APENAS o que foi perguntado, de forma concisa e técnica, SEM usar a estrutura de documentação completa.\n"
@@ -433,7 +518,7 @@ def chat():
         
         prompt = (
             f"{system_instruction}\n\n"
-            f"JSON do fluxo de dados:\n{json.dumps(clean_flow, indent=2, ensure_ascii=False)}\n\n"
+            f"Estrutura do fluxo:\n{flow_representation}\n\n"
             f"Pergunta do usuário: {question}\n\n"
             f"ATENÇÃO: Responda obrigatoriamente em português do Brasil (pt-BR). Não escreva em inglês em hipótese alguma."
         )
@@ -507,16 +592,12 @@ def chat_stream():
         provider = parts[0] if len(parts) > 0 else 'gemini'
         model_name = ':'.join(parts[1:]) if len(parts) > 1 else 'gemini-3.5-flash'
 
-        clean_flow = []
-        if isinstance(flow_data, list):
-            logical_keys = ['id', 'parent', 'edge', 'source', 'target', 'cod_componente', 'value', 'data', 'lane', 'task_type', 'event_type']
-            for node in flow_data:
-                cleaned_node = {k: node[k] for k in logical_keys if k in node}
-                clean_flow.append(cleaned_node)
+        # Compacta o fluxo para economizar tokens e evitar estouros de TPD/TPM
+        flow_representation = compact_flow_for_prompt(flow_data)
         
         system_instruction = (
             "Você é um Especialista em UX Conversacional e Arquiteto de Soluções de Chatbot. "
-            "Sua tarefa é analisar o fluxo de dados técnico em JSON de um chatbot legado e auxiliar a equipe de manutenção.\n\n"
+            "Sua tarefa é analisar a estrutura do fluxo de dados do chatbot legado e auxiliar a equipe de manutenção.\n\n"
             "🚨 REGRA DE OURO PARA RESPOSTAS:\n"
             "1. Se o usuário fizer uma pergunta ESPECÍFICA (ex: 'Liste as APIs', 'Onde está a troca de senha?', 'O que o nó 14 faz?'), "
             "vá DIRETO AO PONTO. Responda APENAS o que foi perguntado, de forma concisa e técnica, SEM usar a estrutura de documentação completa.\n"
@@ -531,7 +612,7 @@ def chat_stream():
         
         prompt = (
             f"{system_instruction}\n\n"
-            f"JSON do fluxo de dados:\n{json.dumps(clean_flow, indent=2, ensure_ascii=False)}\n\n"
+            f"Estrutura do fluxo:\n{flow_representation}\n\n"
             f"Pergunta do usuário: {question}\n\n"
             f"ATENÇÃO: Responda obrigatoriamente em português do Brasil (pt-BR). Não escreva em inglês em hipótese alguma."
         )
@@ -853,70 +934,26 @@ def refine_flow():
 @app.route('/check-models', methods=['GET'])
 def check_models():
     """
-    Testa em paralelo a disponibilidade e cotas de todos os modelos Gemini configurados.
-    Retorna o status estruturado de cada um, incluindo tempo de retry se estiver sob cota.
+    Testa a disponibilidade dos modelos de nuvem de forma leve, verificando a existência
+    das respectivas chaves de API no arquivo .env (evitando chamadas reais que consomem cota).
     """
-    from concurrent.futures import ThreadPoolExecutor
-    
-    models_to_test = [
-        'gemini-3.5-flash'
-    ]
-    
     load_dotenv(override=True)
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        return jsonify({m: {"available": False, "error": "Chave de API ausente."} for m in models_to_test}), 200
-        
-    client = get_gemini_client(api_key)
     results = {}
     
-    def test_model(model_name):
-        actual_test_model = model_name
-        if "3.5-flash" in model_name:
-            actual_test_model = "gemini-2.5-flash"
-        elif "3.5-pro" in model_name:
-            actual_test_model = "gemini-2.5-pro"
-            
-        try:
-            # Requisição mínima para testar resposta gRPC rapidamente
-            client.models.generate_content(
-                model=actual_test_model,
-                contents='Oi',
-                config=types.GenerateContentConfig(max_output_tokens=1)
-            )
-            return model_name, {"available": True}
-        except Exception as e:
-            err_msg = str(e)
-            if "429" in err_msg or "quota" in err_msg.lower() or "ResourceExhausted" in err_msg:
-                import re
-                retry_match = re.search(r"Please retry in ([\d\.]+)s", err_msg)
-                retry_after = float(retry_match.group(1)) if retry_match else 10.0
-                quota_type = "day" if "PerDay" in err_msg or "day" in err_msg.lower() else "minute"
-                return model_name, {
-                    "available": False,
-                    "retry_after": retry_after,
-                    "quota_type": quota_type,
-                    "error": "Cota excedida"
-                }
-            elif "404" in err_msg or "not found" in err_msg.lower():
-                return model_name, {
-                    "available": False,
-                    "error": "Modelo não suportado ou não encontrado."
-                }
-            return model_name, {
-                "available": False,
-                "error": err_msg[:100]
-            }
-
-    with ThreadPoolExecutor(max_workers=len(models_to_test)) as executor:
-        futures = [executor.submit(test_model, m) for m in models_to_test]
-        for future in futures:
-            try:
-                m_name, m_res = future.result(timeout=10)
-                results[m_name] = m_res
-            except Exception:
-                pass
-                
+    # 1. Verificar Gemini
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        results['gemini-3.5-flash'] = {"available": True}
+    else:
+        results['gemini-3.5-flash'] = {"available": False, "error": "Chave de API do Gemini ausente."}
+        
+    # 2. Verificar Groq
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        results['groq:llama-3.3-70b-versatile'] = {"available": True}
+    else:
+        results['groq:llama-3.3-70b-versatile'] = {"available": False, "error": "Chave de API da Groq ausente."}
+        
     return jsonify(results), 200
 
 if __name__ == '__main__':

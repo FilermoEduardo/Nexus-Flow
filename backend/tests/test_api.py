@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+# pyrefly: ignore [missing-import]
 import pytest
 
 # Adiciona o diretório backend ao path para conseguir importar a app Flask
