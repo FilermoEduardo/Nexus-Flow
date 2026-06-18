@@ -31,24 +31,57 @@ if (-not (Test-Path $venvDir)) {
     Pop-Location
 }
 
-# 2. Iniciar o Backend Flask em uma janela separada
+# 2. Iniciar o serviço do Foundry Local
+Write-Host "Iniciando o serviço do Foundry Local na porta 8080..." -ForegroundColor Yellow
+foundry service start
+
+# 3. Iniciar o Backend Flask em uma janela separada
 Write-Host "Iniciando o servidor backend (Flask)..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; .\venv\Scripts\activate.ps1; python app.py"
+$backendProcess = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; .\venv\Scripts\activate.ps1; python app.py" -PassThru
 
 # Aguarda 2 segundos para dar tempo ao Flask subir
 Start-Sleep -Seconds 2
 
-# 3. Iniciar o servidor de desenvolvimento para o Frontend na porta 8001 em uma janela separada
+# 4. Iniciar o servidor de desenvolvimento para o Frontend na porta 8001 em uma janela separada
 Write-Host "Iniciando o servidor do frontend na porta 8001..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; python -m http.server 8001"
-
+$frontendProcess = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; python -m http.server 8001" -PassThru
 
 # Aguarda 1 segundo
 Start-Sleep -Seconds 1
 
-# 4. Abrir o Frontend no navegador
+# 5. Abrir o Frontend no navegador
 Write-Host "Abrindo a aplicação no navegador..." -ForegroundColor Green
 Start-Process "http://localhost:8001"
 
 Write-Host "Tudo pronto! Seus servidores estão rodando em janelas separadas." -ForegroundColor Green
+Write-Host "---" -ForegroundColor Cyan
+Write-Host "Monitorando os processos..." -ForegroundColor Yellow
+Write-Host "Para encerrar o projeto e parar o Foundry Local, feche a janela do Backend (Flask) ou pressione CTRL+C aqui." -ForegroundColor Magenta
+
+try {
+    # Aguarda em loop monitorando se o backend foi fechado
+    while ($true) {
+        if ($backendProcess.HasExited) {
+            Write-Host "O servidor Backend (Flask) foi fechado." -ForegroundColor Red
+            break
+        }
+        Start-Sleep -Seconds 1
+    }
+}
+finally {
+    Write-Host "Encerrando servidores e desligando o serviço do Foundry Local..." -ForegroundColor Red
+    
+    # Para o serviço do Foundry Local
+    foundry service stop
+    
+    # Encerra o frontend se ainda estiver ativo
+    if ($frontendProcess -and -not $frontendProcess.HasExited) {
+        Stop-Process -Id $frontendProcess.Id -Force
+    }
+    
+    # Encerra o backend se ainda estiver ativo
+    if ($backendProcess -and -not $backendProcess.HasExited) {
+        Stop-Process -Id $backendProcess.Id -Force
+    }
+}
 

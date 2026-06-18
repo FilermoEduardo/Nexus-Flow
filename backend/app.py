@@ -11,8 +11,8 @@ from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 # pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
-# pyrefly: ignore [missing-import]
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from translator import generate_bpmn_xml
 from drawio_parser import parse_drawio_to_json
 from jsonschema import validate, ValidationError
@@ -24,8 +24,17 @@ from flask_limiter.util import get_remote_address
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv(override=True)
 
-# Configura o Gemini
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+_gemini_client = None
+_last_api_key = None
+
+def get_gemini_client(api_key=None):
+    global _gemini_client, _last_api_key
+    if api_key is None:
+        api_key = os.environ.get("GEMINI_API_KEY")
+    if _gemini_client is None or _last_api_key != api_key:
+        _gemini_client = genai.Client(api_key=api_key)
+        _last_api_key = api_key
+    return _gemini_client
 
 app = Flask(__name__)
 CORS(app)
@@ -78,56 +87,188 @@ def require_api_key(f):
         return f(*args, **kwargs)
     return decorated
 
+def extract_json(text):
+    """
+    Extrai e limpa blocos JSON de strings retornadas pela IA,
+    removendo marcações de markdown se houver.
+    """
+    text = text.strip()
+    if not text:
+        return ""
+    
+    # Se já começar com [ ou {, tenta parsear direto
+    if text.startswith('{') or text.startswith('['):
+        return text
+        
+    # Tenta encontrar blocos delimitados por ```json ... ```
+    import re
+    match = re.search(r'```json\s*([\s\S]*?)\s*```', text)
+    if match:
+        return match.group(1).strip()
+        
+    # Tenta encontrar blocos genéricos de ``` ... ```
+    match = re.search(r'```\s*([\s\S]*?)\s*```', text)
+    if match:
+        return match.group(1).strip()
+        
+    # Se não houver blocos marcados, tenta encontrar do primeiro { ou [ até o último } ou ]
+    first_brace = text.find('{')
+    last_brace = text.rfind('}')
+    first_bracket = text.find('[')
+    last_bracket = text.rfind(']')
+    
+    if first_brace != -1 and last_brace != -1:
+        if first_bracket != -1 and first_bracket < first_brace and last_bracket > last_brace:
+            return text[first_bracket:last_bracket+1].strip()
+        return text[first_brace:last_brace+1].strip()
+        
+    if first_bracket != -1 and last_bracket != -1:
+        return text[first_bracket:last_bracket+1].strip()
+        
+    return text
+
 def generate_llm_response(prompt, provider, model_name, attached_file=None, response_json=False, stream=False):
     """
-    Função unificada para gerar conteúdo usando Gemini (nuvem) ou Ollama (local),
+    Função unificada para gerar conteúdo usando Gemini (nuvem) ou Foundry Local (local),
     com suporte para streaming de respostas (Melhoria 2).
     """
-    if provider == "ollama":
-        # Chamada ao Ollama Local
-        url = "http://localhost:11434/api/generate"
-        payload = {
-            "model": model_name,
-            "prompt": prompt,
-            "stream": stream
-        }
-        if response_json:
-            payload["format"] = "json"
+    if provider in ("foundry", "ollama"):
+        # Mapeamento do endpoint do Foundry Local
+        foundry_api_base = os.environ.get("FOUNDRY_API_BASE", "http://localhost:8080/v1")
+        url = f"{foundry_api_base}/chat/completions"
+        
+        # Obter a porta configurada no FOUNDRY_API_BASE
+        import urllib.parse
+        parsed_url = urllib.parse.urlparse(foundry_api_base)
+        port_info = f" na porta {parsed_url.port}" if parsed_url.port else ""
+        
+        # Obter modelos disponíveis no Foundry Local para mapeamento dinâmico
+        try:
+            models_resp = requests.get(f"{foundry_api_base}/models", timeout=5)
+            if models_resp.status_code == 200:
+                available_models = [m.get("id") for m in models_resp.json().get("data", [])]
+            else:
+                available_models = []
+        except Exception:
+            available_models = []
+
+        actual_model = model_name
+        matched_model = None
+        if available_models:
+            search_term = model_name.lower()
+            if "qwen" in search_term and "coder" in search_term:
+                matched_model = next((m for m in available_models if "qwen" in m.lower() and "coder" in m.lower()), None)
+            elif "phi" in search_term or "mini" in search_term:
+                matched_model = next((m for m in available_models if "phi" in m.lower() and ("3" in m.lower() or "mini" in m.lower())), None)
             
-        if attached_file:
-            # Se for um arquivo de imagem, o Ollama suporta envio em base64 no campo 'images'
-            content_type = attached_file.content_type or ""
-            if "image" in content_type:
-                attached_file.seek(0)
-                file_bytes = attached_file.read()
-                b64_img = base64.b64encode(file_bytes).decode('utf-8')
-                payload["images"] = [b64_img]
+            if matched_model:
+                actual_model = matched_model
+                
+        if not matched_model:
+            # Fallback robusto caso a consulta de modelos falhe ou não encontre correspondente
+            if "qwen" in actual_model.lower():
+                actual_model = "qwen2.5-coder-7b-instruct-openvino-gpu:2"
+            elif "llama" in actual_model.lower():
+                actual_model = "qwen2.5-coder-7b-instruct-openvino-gpu:2"
+            elif "phi" in actual_model.lower() or "pi" in actual_model.lower():
+                actual_model = "Phi-3-mini-4k-instruct-openvino-gpu:2"
+            
+        # Preparação das mensagens compatíveis com OpenAI
+        if attached_file and "image" in (attached_file.content_type or ""):
+            attached_file.seek(0)
+            file_bytes = attached_file.read()
+            b64_img = base64.b64encode(file_bytes).decode('utf-8')
+            mime_type = attached_file.content_type or "image/jpeg"
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}}
+                ]
+            }]
+        else:
+            messages = [{"role": "user", "content": prompt}]
+            
+        payload = {
+            "model": actual_model,
+            "messages": messages,
+            "stream": stream,
+            "max_tokens": 4096
+        }
+        
+        if response_json:
+            payload["response_format"] = {"type": "json_object"}
             
         if stream:
-            # Gerador para streaming do Ollama
-            def ollama_stream_generator():
-                response = requests.post(url, json=payload, timeout=120, stream=True)
-                response.raise_for_status()
+            # Gerador para streaming do Foundry Local (formato SSE compatível com OpenAI)
+            def foundry_stream_generator():
+                try:
+                    response = requests.post(url, json=payload, timeout=600, stream=True)
+                    response.raise_for_status()
+                except requests.exceptions.ConnectionError as ce:
+                    raise RuntimeError(
+                        f"Não foi possível conectar ao Foundry Local. Certifique-se de que o serviço do Foundry está rodando (execute 'foundry service start' no terminal{port_info})."
+                    ) from ce
+                except requests.exceptions.HTTPError as he:
+                    try:
+                        err_json = he.response.json()
+                        err_msg = err_json.get("error", {}).get("message", str(he))
+                    except Exception:
+                        err_msg = he.response.text or str(he)
+                    
+                    if "not found" in err_msg.lower() or "no model" in err_msg.lower():
+                        raise RuntimeError(
+                            f"O modelo '{actual_model}' não foi encontrado no Foundry Local. Execute o comando 'foundry model download {actual_model}' no seu terminal para baixá-lo."
+                        ) from he
+                    raise RuntimeError(f"Erro retornado pelo Foundry Local: {err_msg}") from he
+                except Exception as e:
+                    raise RuntimeError(f"Erro inesperado ao conectar ao Foundry Local: {str(e)}") from e
+
                 for line in response.iter_lines():
                     if line:
-                        try:
-                            res_data = json.loads(line.decode('utf-8'))
-                            token = res_data.get("response", "")
-                            if token:
-                                yield token
-                        except Exception:
-                            pass
-            return ollama_stream_generator()
+                        decoded_line = line.decode('utf-8').strip()
+                        if decoded_line.startswith("data:"):
+                            content_str = decoded_line[5:].strip()
+                            if content_str == "[DONE]":
+                                break
+                            try:
+                                res_data = json.loads(content_str)
+                                token = res_data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                if token:
+                                    yield token
+                            except Exception:
+                                pass
+            return foundry_stream_generator()
         else:
-            # Chamada convencional Ollama
-            response = requests.post(url, json=payload, timeout=120)
-            response.raise_for_status()
-            res_data = response.json()
-            return res_data.get("response", "")
+            # Chamada convencional síncrona
+            try:
+                response = requests.post(url, json=payload, timeout=600)
+                response.raise_for_status()
+                res_data = response.json()
+                return res_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            except requests.exceptions.ConnectionError as ce:
+                raise RuntimeError(
+                    f"Não foi possível conectar ao Foundry Local. Certifique-se de que o serviço do Foundry está rodando (execute 'foundry service start' no terminal{port_info})."
+                ) from ce
+            except requests.exceptions.HTTPError as he:
+                try:
+                    err_json = he.response.json()
+                    err_msg = err_json.get("error", {}).get("message", str(he))
+                except Exception:
+                    err_msg = he.response.text or str(he)
+                
+                if "not found" in err_msg.lower() or "no model" in err_msg.lower():
+                    raise RuntimeError(
+                        f"O modelo '{actual_model}' não foi encontrado no Foundry Local. Execute o comando 'foundry model download {actual_model}' no seu terminal para baixá-lo."
+                    ) from he
+                raise RuntimeError(f"Erro retornado pelo Foundry Local: {err_msg}") from he
+            except Exception as e:
+                raise RuntimeError(f"Erro inesperado ao conectar ao Foundry Local: {str(e)}") from e
     else:
         # Carrega e configura o Gemini dinamicamente a cada requisição
         load_dotenv(override=True)
-        genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+        api_key = os.environ.get("GEMINI_API_KEY")
+        client = get_gemini_client(api_key)
 
         # Chamada ao Gemini na nuvem (Padrão)
         actual_model = model_name
@@ -137,27 +278,31 @@ def generate_llm_response(prompt, provider, model_name, attached_file=None, resp
         elif "3.5-pro" in model_name:
             actual_model = "gemini-2.5-pro"
             
-        model = genai.GenerativeModel(model_name=actual_model)
-        
         contents = []
         if attached_file:
             attached_file.seek(0)
             file_bytes = attached_file.read()
-            contents.append({
-                "mime_type": attached_file.content_type,
-                "data": file_bytes
-            })
+            contents.append(
+                types.Part.from_bytes(
+                    data=file_bytes,
+                    mime_type=attached_file.content_type
+                )
+            )
         contents.append(prompt)
         
-        generation_config = {}
+        config = types.GenerateContentConfig()
         if response_json:
-            generation_config["response_mime_type"] = "application/json"
+            config.response_mime_type = "application/json"
             
         # Tentativa de chamada com backoff exponencial contra timeouts temporários (504)
         for attempt in range(3):
             try:
                 if stream:
-                    res = model.generate_content(contents, generation_config=generation_config, stream=True)
+                    res = client.models.generate_content_stream(
+                        model=actual_model,
+                        contents=contents,
+                        config=config
+                    )
                     # Gerador para streaming do Gemini
                     def gemini_stream_generator():
                         for chunk in res:
@@ -165,7 +310,11 @@ def generate_llm_response(prompt, provider, model_name, attached_file=None, resp
                                 yield chunk.text
                     return gemini_stream_generator()
                 else:
-                    res = model.generate_content(contents, generation_config=generation_config)
+                    res = client.models.generate_content(
+                        model=actual_model,
+                        contents=contents,
+                        config=config
+                    )
                     return res.text
             except Exception as ex:
                 if attempt == 2:
@@ -254,10 +403,10 @@ def chat():
                 return jsonify({"error": f"Schema do fluxo inválido: {ve.message}"}), 400
 
         # Obtém o motor de IA do header (ex: "gemini:gemini-2.5-flash" ou "ollama:qwen2.5:3b")
-        ai_engine = request.headers.get('X-Provider-Model', 'gemini:gemini-flash-lite-latest')
+        ai_engine = request.headers.get('X-Provider-Model', 'gemini:gemini-3.5-flash')
         parts = ai_engine.split(':')
         provider = parts[0] if len(parts) > 0 else 'gemini'
-        model_name = ':'.join(parts[1:]) if len(parts) > 1 else 'gemini-flash-lite-latest'
+        model_name = ':'.join(parts[1:]) if len(parts) > 1 else 'gemini-3.5-flash'
 
         # Filtrar propriedades visuais para economizar tokens
         clean_flow = []
@@ -353,10 +502,10 @@ def chat_stream():
             except ValidationError as ve:
                 return jsonify({"error": f"Schema do fluxo inválido: {ve.message}"}), 400
 
-        ai_engine = request.headers.get('X-Provider-Model', 'gemini:gemini-flash-lite-latest')
+        ai_engine = request.headers.get('X-Provider-Model', 'gemini:gemini-3.5-flash')
         parts = ai_engine.split(':')
         provider = parts[0] if len(parts) > 0 else 'gemini'
-        model_name = ':'.join(parts[1:]) if len(parts) > 1 else 'gemini-flash-lite-latest'
+        model_name = ':'.join(parts[1:]) if len(parts) > 1 else 'gemini-3.5-flash'
 
         clean_flow = []
         if isinstance(flow_data, list):
@@ -445,10 +594,10 @@ def generate_multimodal():
             return jsonify({"error": "Forneça uma descrição em texto ou envie um arquivo de áudio/imagem/PDF."}), 400
 
         # Obtém o motor de IA do header (ex: "gemini:gemini-2.5-flash" ou "ollama:qwen2.5:3b")
-        ai_engine = request.headers.get('X-Provider-Model', 'gemini:gemini-flash-lite-latest')
+        ai_engine = request.headers.get('X-Provider-Model', 'gemini:gemini-3.5-flash')
         parts = ai_engine.split(':')
         provider = parts[0] if len(parts) > 0 else 'gemini'
-        model_name = ':'.join(parts[1:]) if len(parts) > 1 else 'gemini-flash-lite-latest'
+        model_name = ':'.join(parts[1:]) if len(parts) > 1 else 'gemini-3.5-flash'
             
         system_instruction = (
             "Você é um arquiteto especialista em Chatbots e engenharia de processos BPMN 2.0. "
@@ -508,11 +657,23 @@ def generate_multimodal():
             response_json=True
         )
             
-        if not response_text:
-            raise RuntimeError("Não foi possível obter uma resposta válida do provedor de IA.")
+        if not response_text or not response_text.strip():
+            raise RuntimeError("Não foi possível obter uma resposta válida do provedor de IA (a resposta está vazia).")
             
-        # Parseia o JSON retornado
-        flow_json = json.loads(response_text.strip())
+        # Parseia o JSON retornado de forma robusta extraindo blocos markdown se existirem
+        try:
+            cleaned_json = extract_json(response_text)
+            flow_json = json.loads(cleaned_json)
+        except json.JSONDecodeError as jde:
+            print("--- ERRO DE DECODE NO GENERATE_MULTIMODAL ---")
+            print(f"Response Text recebido: {repr(response_text)}")
+            print(f"Cleaned JSON tentado: {repr(cleaned_json)}")
+            print("---------------------------------------------")
+            raise RuntimeError(
+                f"A resposta gerada pela IA não pôde ser parseada como JSON estruturado válido.\n"
+                f"Detalhes: {jde}\n"
+                f"Resposta bruta da IA: {response_text}"
+            ) from jde
         
         if 'flow' not in flow_json or not isinstance(flow_json['flow'], list):
             raise ValueError("O formato de fluxo gerado pela IA é inválido.")
@@ -573,10 +734,10 @@ def refine_flow():
         except ValidationError as ve:
             return jsonify({"error": f"Schema do fluxo inválido: {ve.message}"}), 400
             
-        ai_engine = request.headers.get('X-Provider-Model', 'gemini:gemini-flash-lite-latest')
+        ai_engine = request.headers.get('X-Provider-Model', 'gemini:gemini-3.5-flash')
         parts = ai_engine.split(':')
         provider = parts[0] if len(parts) > 0 else 'gemini'
-        model_name = ':'.join(parts[1:]) if len(parts) > 1 else 'gemini-flash-lite-latest'
+        model_name = ':'.join(parts[1:]) if len(parts) > 1 else 'gemini-3.5-flash'
         
         system_instruction = (
             "Você é um arquiteto especialista em Chatbots e engenharia de processos BPMN 2.0.\n"
@@ -639,10 +800,22 @@ def refine_flow():
             response_json=True
         )
         
-        if not response_text:
-            raise RuntimeError("Não foi possível obter resposta da IA para refinamento.")
+        if not response_text or not response_text.strip():
+            raise RuntimeError("Não foi possível obter resposta da IA para refinamento (a resposta está vazia).")
             
-        flow_json = json.loads(response_text.strip())
+        try:
+            cleaned_json = extract_json(response_text)
+            flow_json = json.loads(cleaned_json)
+        except json.JSONDecodeError as jde:
+            print("--- ERRO DE DECODE NO REFINE_FLOW ---")
+            print(f"Response Text recebido: {repr(response_text)}")
+            print(f"Cleaned JSON tentado: {repr(cleaned_json)}")
+            print("-------------------------------------")
+            raise RuntimeError(
+                f"A resposta gerada pela IA para refinamento não pôde ser parseada como JSON estruturado válido.\n"
+                f"Detalhes: {jde}\n"
+                f"Resposta bruta da IA: {response_text}"
+            ) from jde
         
         if 'flow' not in flow_json or not isinstance(flow_json['flow'], list):
             raise ValueError("O formato de fluxo retornado pela IA é inválido.")
@@ -686,12 +859,7 @@ def check_models():
     from concurrent.futures import ThreadPoolExecutor
     
     models_to_test = [
-        'gemini-flash-lite-latest',
-        'gemini-3.1-flash-lite',
-        'gemini-flash-latest',
-        'gemini-2.0-flash-lite',
-        'gemini-3.5-flash',
-        'gemini-3.5-pro'
+        'gemini-3.5-flash'
     ]
     
     load_dotenv(override=True)
@@ -699,14 +867,23 @@ def check_models():
     if not api_key:
         return jsonify({m: {"available": False, "error": "Chave de API ausente."} for m in models_to_test}), 200
         
-    genai.configure(api_key=api_key)
+    client = get_gemini_client(api_key)
     results = {}
     
     def test_model(model_name):
+        actual_test_model = model_name
+        if "3.5-flash" in model_name:
+            actual_test_model = "gemini-2.5-flash"
+        elif "3.5-pro" in model_name:
+            actual_test_model = "gemini-2.5-pro"
+            
         try:
-            model = genai.GenerativeModel(model_name)
             # Requisição mínima para testar resposta gRPC rapidamente
-            res = model.generate_content('Oi', generation_config={"max_output_tokens": 1})
+            client.models.generate_content(
+                model=actual_test_model,
+                contents='Oi',
+                config=types.GenerateContentConfig(max_output_tokens=1)
+            )
             return model_name, {"available": True}
         except Exception as e:
             err_msg = str(e)

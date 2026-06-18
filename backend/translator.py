@@ -349,6 +349,22 @@ def generate_bpmn_xml(flow_data, auto_layout=False):
 
         if has_parent:
             parent_id = f"node_{raw_parent}"
+            
+            # Verificar se já existe uma conexão explícita entre parent_id e node_id no flow_data
+            # para evitar que um fluxo implícito sem rótulo oculte a conexão com rótulo
+            has_explicit = False
+            for edge in flow_data:
+                if edge.get('edge') == 1 or ('source' in edge and 'target' in edge):
+                    e_src = edge.get('source')
+                    e_tgt = edge.get('target')
+                    if e_src is not None and e_tgt is not None:
+                        if str(e_src) == str(raw_parent) and str(e_tgt) == str(raw_id):
+                            has_explicit = True
+                            break
+            
+            if has_explicit:
+                continue
+
             flow_pair = (parent_id, node_id)
             if flow_pair not in generated_flows:
                 generated_flows.add(flow_pair)
@@ -399,14 +415,16 @@ def generate_bpmn_xml(flow_data, auto_layout=False):
                     c_center_x = cx + (cw / 2)
                     c_center_y = cy + (ch / 2)
 
-                    # Adiciona label visual no diagrama no ponto médio
+                    # Adiciona label visual no diagrama no ponto médio com recuo e centralização
                     label_xml = ""
                     if flow_name:
-                        lx = (p_center_x + c_center_x) / 2 - 20
-                        ly = (p_center_y + c_center_y) / 2 - 10
+                        x_medio = (p_center_x + c_center_x) / 2
+                        y_medio = (p_center_y + c_center_y) / 2
+                        lx = x_medio - 25
+                        ly = y_medio - 20
                         label_xml = f'''
             <bpmndi:BPMNLabel>
-                <dc:Bounds x="{lx}" y="{ly}" width="60" height="20" />
+                <dc:Bounds x="{lx}" y="{ly}" width="50" height="14" />
             </bpmndi:BPMNLabel>'''
 
                     xml_diagram.append(f'''
@@ -520,6 +538,8 @@ def generate_bpmn_xml(flow_data, auto_layout=False):
 
     collab_part = f"\n  {collaboration_xml}\n" if has_lanes else ""
 
+    bpmn_plane_element = "Collaboration_1" if has_lanes else "Process_1"
+
     full_xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" 
@@ -531,7 +551,7 @@ def generate_bpmn_xml(flow_data, auto_layout=False):
     {process_xml}
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="{bpmn_plane_element}">
       {diagram_xml}
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

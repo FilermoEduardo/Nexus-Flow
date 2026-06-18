@@ -61,7 +61,7 @@ const API_BASE_URL = window.location.hostname === 'localhost' || window.location
 let currentFlowData = null;
 let currentAttachedFile = null;
 let rawJsonFlow = null;
-let selectedModel = 'gemini:gemini-flash-lite-latest'; // Padrão
+let selectedModel = 'gemini:gemini-3.5-flash'; // Padrão
 
 let chatHistory = []; // Armazena mensagens da sessão atual (Oráculo)
 let bpmnViewer = null; // Instância global do bpmn-js
@@ -82,7 +82,7 @@ const modelQuotaBlocks = {};
 
 function handleModelQuotaExceeded(modelName, retryAfter, quotaType) {
     // Reconstrói a chave padrão
-    const modelKey = modelName.startsWith('gemini:') || modelName.startsWith('ollama:') 
+    const modelKey = modelName.startsWith('gemini:') || modelName.startsWith('ollama:') || modelName.startsWith('foundry:') 
         ? modelName 
         : `gemini:${modelName}`;
         

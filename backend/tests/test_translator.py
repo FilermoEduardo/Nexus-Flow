@@ -170,3 +170,95 @@ def test_generate_bpmn_xml_explicit_edges():
     assert 'sourceRef="node_2"' in xml_output
     assert 'targetRef="node_3"' in xml_output
     assert 'BPMNLabel' in xml_output
+
+
+def test_generate_bpmn_xml_implicit_skipping():
+    # Se houver parent e um edge explícito definidos concorrentemente,
+    # deve-se gerar APENAS um sequenceFlow (o explícito com name)
+    flow_data = [
+        {
+            "id": 1,
+            "parent": None,
+            "edge": 0,
+            "cod_componente": 1,
+            "name": "Iniciado"
+        },
+        {
+            "id": 2,
+            "parent": 1, # Tem parent: 1, o que geraria um fluxo implícito de 1 para 2
+            "edge": 0,
+            "cod_componente": 17,
+            "name": "Mensagem"
+        },
+        {
+            "id": "edge_concorrente",
+            "edge": 1,
+            "source": 1,
+            "target": 2,
+            "value": "Opção Especial"
+        }
+    ]
+    xml_output = generate_bpmn_xml(flow_data, auto_layout=True)
+    assert xml_output is not None
+    assert 'name="Opção Especial"' in xml_output
+    
+    # Deve haver apenas 1 sequenceFlow com sourceRef="node_1" e targetRef="node_2" no XML
+    import re
+    flows = re.findall(r'sourceRef="node_1"\s+targetRef="node_2"', xml_output)
+    # Se houvesse o implícito e o explícito, o número de correspondências seria maior
+    assert len(flows) == 1
+
+
+def test_generate_bpmn_xml_label_geometry():
+    # Validar as coordenadas geométricas do BPMNLabel com offset Y: -20 e X: -25 e bounds 50x14
+    flow_data = [
+        {
+            "id": 1,
+            "parent": None,
+            "edge": 0,
+            "cod_componente": 1,
+            "name": "Iniciado"
+        },
+        {
+            "id": 2,
+            "parent": None,
+            "edge": 0,
+            "cod_componente": 17,
+            "name": "Mensagem"
+        },
+        {
+            "id": "edge_geo",
+            "edge": 1,
+            "source": 1,
+            "target": 2,
+            "value": "Label Geo"
+        }
+    ]
+    xml_output = generate_bpmn_xml(flow_data, auto_layout=True)
+    # Nó 1 (col 0): x_center = 100, y_center = 200
+    # Nó 2 (col 1): x_center = 480, y_center = 200
+    # X_medio = 290, Y_medio = 200
+    # lx = 290 - 25 = 265, ly = 200 - 20 = 180
+    assert 'x="265' in xml_output or 'x="265.0"' in xml_output
+    assert 'y="180' in xml_output or 'y="180.0"' in xml_output
+    assert 'width="50" height="14"' in xml_output
+
+
+def test_generate_bpmn_xml_plane_bpmn_element():
+    # Se não houver raias (lanes), bpmnElement da BPMNPlane deve ser Process_1
+    flow_simple = [
+        {"id": 1, "parent": None, "edge": 0, "cod_componente": 1, "name": "Start"}
+    ]
+    xml_simple = generate_bpmn_xml(flow_simple, auto_layout=True)
+    # O BPMNPlane deve ter bpmnElement="Process_1"
+    assert 'bpmnElement="Process_1"' in xml_simple
+    assert 'bpmnElement="Collaboration_1"' not in xml_simple
+
+    # Se houver raias, bpmnElement da BPMNPlane deve ser Collaboration_1
+    flow_lanes = [
+        {"id": 1, "parent": None, "edge": 0, "cod_componente": 1, "name": "Start", "lane": "Suporte"}
+    ]
+    xml_lanes = generate_bpmn_xml(flow_lanes, auto_layout=True)
+    assert 'bpmnElement="Collaboration_1"' in xml_lanes
+    assert 'bpmnElement="Process_1"' not in xml_lanes
+
