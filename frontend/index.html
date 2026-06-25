@@ -90,7 +90,7 @@
             </h1>
             <p class="text-slate-400 text-lg max-w-md mx-auto">A plataforma definitiva para diagnóstico, visualização e engenharia reversa de chatbots legados.</p>
         </div>
-        <div class="grid md:grid-cols-2 gap-8 w-full max-w-4xl px-4">
+        <div class="grid md:grid-cols-3 gap-8 w-full max-w-5xl px-4">
             <!-- PORTA A: ORÁCULO DE MANUTENÇÃO -->
             <div id="btn-goto-oracle" class="glass-card rounded-2xl p-8 cursor-pointer flex flex-col justify-between h-80 relative overflow-hidden group">
                 <div class="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-300"></div>
@@ -107,7 +107,7 @@
             </div>
  
             <!-- PORTA B: CONVERSOR DRAW.IO -->
-            <div id="btn-goto-converter" class="hidden glass-card rounded-2xl p-8 cursor-pointer flex flex-col justify-between h-80 relative overflow-hidden group">
+            <div id="btn-goto-converter" class="glass-card rounded-2xl p-8 cursor-pointer flex flex-col justify-between h-80 relative overflow-hidden group">
                 <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl group-hover:bg-indigo-500/20 transition-all duration-300"></div>
                 <div>
                     <div class="w-14 h-14 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 text-2xl mb-6 border border-indigo-500/20 group-hover:scale-110 transition-transform duration-300">
@@ -304,15 +304,15 @@
                     <i class="fa-solid fa-cloud-arrow-up"></i>
                 </div>
                 
-                <h3 class="text-2xl font-bold text-white text-center mb-2">Importar Diagrama</h3>
-                <p class="text-slate-400 text-sm text-center mb-8 max-w-sm">Arraste seu arquivo .drawio ou clique para fazer o upload e gerar o JSON estruturado da Estella.</p>
+                <h3 class="text-2xl font-bold text-white text-center mb-2">Conversor de Chatbot</h3>
+                <p class="text-slate-400 text-sm text-center mb-8 max-w-sm">Arraste seu diagrama (.drawio, .xml) ou arquivos de fluxo (.json) para converter instantaneamente entre formatos.</p>
 
                 <!-- Área de Drag & Drop -->
                 <div id="dropzone" class="w-full h-48 border-2 border-dashed border-slate-700 hover:border-indigo-500/50 rounded-xl bg-slate-900/20 flex flex-col justify-center items-center cursor-pointer transition-all duration-300">
                     <i class="fa-solid fa-file-invoice text-4xl text-slate-500 mb-3 group-hover:scale-110"></i>
-                    <span class="text-slate-300 text-sm font-medium">Selecione seu arquivo .drawio</span>
-                    <span class="text-slate-500 text-xs mt-1">Limites: XML / .drawio</span>
-                    <input type="file" id="drawioUpload" accept=".drawio,.xml" class="hidden" />
+                    <span class="text-slate-300 text-sm font-medium">Selecione seu arquivo</span>
+                    <span class="text-slate-500 text-xs mt-1">Formatos aceitos: .drawio / .xml / .json</span>
+                    <input type="file" id="drawioUpload" accept=".drawio,.xml,.json" class="hidden" />
                 </div>
 
                 <!-- Processamento / Loading -->
@@ -327,6 +327,16 @@
                         <i class="fa-regular fa-circle-check text-2xl animate-pulse"></i>
                         <span class="text-sm font-semibold text-slate-200">Conversão realizada com sucesso!</span>
                     </div>
+
+                    <!-- Seletor de Formato -->
+                    <div class="w-full mb-4 flex items-center justify-between bg-slate-900/60 border border-slate-800 px-3 py-2 rounded-lg text-slate-200">
+                        <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Formato de Saída:</label>
+                        <select id="export-format-selector" class="bg-transparent text-slate-200 text-xs font-medium outline-none cursor-pointer">
+                            <option value="nexus-flow" class="bg-slate-950 text-slate-200" selected>Nexus-Flow (Padrão)</option>
+                            <option value="tiledesk" class="bg-slate-950 text-slate-200">Tiledesk / Odete (Intents)</option>
+                        </select>
+                    </div>
+
                     <a id="btn-download" href="#" download="fluxo_estella.json"
                         class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-medium text-center py-3 rounded-lg shadow-lg shadow-indigo-500/20 transition duration-200 flex items-center justify-center gap-2">
                         <i class="fa-solid fa-download"></i> Baixar JSON do Fluxo
@@ -439,6 +449,6 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
 </body>
 </html>

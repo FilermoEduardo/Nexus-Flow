@@ -32,12 +32,15 @@ const statEdges = document.getElementById('stat-edges');
 const statScripts = document.getElementById('stat-scripts');
 const statApis = document.getElementById('stat-apis');
 
-// Elementos do Módulo B: Conversor (Ocultado visualmente por enquanto)
+// Elementos do Módulo B: Conversor
 const dropzone = document.getElementById('dropzone');
 const drawioUpload = document.getElementById('drawioUpload');
 const converterLoading = document.getElementById('converter-loading');
 const downloadBox = document.getElementById('download-box');
 const btnDownload = document.getElementById('btn-download');
+const exportFormatSelector = document.getElementById('export-format-selector');
+
+let lastConvertedFlowData = null;
 
 // Elementos do Módulo C: Gerador Inteligente BPMN
 const generatorText = document.getElementById('generator-text');
@@ -367,6 +370,167 @@ function computeFlowStats(flow) {
     statApis.textContent = apisCount;
 }
 
+/**
+ * Converte a estrutura de intents (Tiledesk) para o formato de fluxo (Nexus-Flow)
+ * @param {Object} tiledeskJson 
+ * @returns {Array} Array de nós e conexões compatível com o Nexus-Flow
+ */
+function convertTiledeskToNexusFlow(tiledeskJson) {
+    const flow = [];
+    const intents = tiledeskJson.intents || [];
+    
+    // 1. Criar os nós
+    intents.forEach((intent) => {
+        const id = intent.intent_id;
+        const name = intent.intent_display_name || "Sem nome";
+        
+        let codComponente = 17; // Padrão: Task
+        let taskType = "user";
+        let eventType = undefined;
+        
+        if (name === "start") {
+            codComponente = 1; // Start Event
+            eventType = "message";
+        } else if (name === "defaultFallback") {
+            codComponente = 17;
+            taskType = "receive";
+        }
+        
+        // Analisar ações para inferir o componente correspondente
+        const actions = intent.actions || [];
+        const hasWebRequest = actions.some(a => a._tdActionType === "webrequestv2");
+        const hasCondition = actions.some(a => a._tdActionType === "jsoncondition");
+        const hasSetAttribute = actions.some(a => a._tdActionType === "setattribute-v2");
+        const hasReplaceBot = actions.some(a => a._tdActionType === "replacebotv3");
+        
+        if (hasWebRequest) {
+            codComponente = 9; // API
+            taskType = "service";
+        } else if (hasCondition) {
+            codComponente = 15; // Gateway/Decisão
+        } else if (hasSetAttribute) {
+            codComponente = 19; // Script/Processamento
+            taskType = "script";
+        } else if (hasReplaceBot) {
+            codComponente = 17;
+            taskType = "send";
+        }
+        
+        let lane = "Sistema";
+        if (name === "start" || name === "defaultFallback") {
+            lane = "Cliente";
+        }
+        
+        flow.push({
+            id: id,
+            parent: null,
+            edge: 0,
+            cod_componente: codComponente,
+            name: name,
+            lane: lane,
+            task_type: taskType,
+            event_type: eventType
+        });
+    });
+    
+    // Helper para limpar hash do intentName (ex: "#id" -> "id")
+    const cleanIntentId = (idStr) => {
+        if (!idStr) return "";
+        return idStr.startsWith("#") ? idStr.substring(1) : idStr;
+    };
+    
+    // 2. Criar as conexões (edges)
+    let edgeCounter = 1;
+    intents.forEach((intent) => {
+        const sourceId = intent.intent_id;
+        const actions = intent.actions || [];
+        
+        // Verificar se tem nextBlockAction nos atributos do intent
+        if (intent.attributes && intent.attributes.nextBlockAction) {
+            const nextAction = intent.attributes.nextBlockAction;
+            if (nextAction.intentName) {
+                const targetId = cleanIntentId(nextAction.intentName);
+                if (targetId) {
+                    flow.push({
+                        id: `edge_t_${edgeCounter++}`,
+                        edge: 1,
+                        source: sourceId,
+                        target: targetId,
+                        value: ""
+                    });
+                }
+            }
+        }
+        
+        // Verificar transições nas ações
+        actions.forEach((action) => {
+            if (action._tdActionType === "intent" && action.intentName) {
+                const targetId = cleanIntentId(action.intentName);
+                if (targetId) {
+                    flow.push({
+                        id: `edge_t_${edgeCounter++}`,
+                        edge: 1,
+                        source: sourceId,
+                        target: targetId,
+                        value: ""
+                    });
+                }
+            }
+            
+            if (action.trueIntent) {
+                const targetId = cleanIntentId(action.trueIntent);
+                if (targetId) {
+                    flow.push({
+                        id: `edge_t_${edgeCounter++}`,
+                        edge: 1,
+                        source: sourceId,
+                        target: targetId,
+                        value: "Sucesso"
+                    });
+                }
+            }
+            
+            if (action.falseIntent) {
+                const targetId = cleanIntentId(action.falseIntent);
+                if (targetId) {
+                    flow.push({
+                        id: `edge_t_${edgeCounter++}`,
+                        edge: 1,
+                        source: sourceId,
+                        target: targetId,
+                        value: "Falha"
+                    });
+                }
+            }
+            
+            if (action._tdActionType === "replacebotv3" && action.blockName) {
+                const destName = action.blockName || action.botSlug || "Outro Bot";
+                const targetId = `bot_${destName}`;
+                if (!flow.some(n => n.id === targetId)) {
+                    flow.push({
+                        id: targetId,
+                        parent: null,
+                        edge: 0,
+                        cod_componente: 1,
+                        name: `Redirecionar: ${destName}`,
+                        lane: "Sistema",
+                        event_type: "terminate"
+                    });
+                }
+                flow.push({
+                    id: `edge_t_${edgeCounter++}`,
+                    edge: 1,
+                    source: sourceId,
+                    target: targetId,
+                    value: "Transição"
+                });
+            }
+        });
+    });
+    
+    return flow;
+}
+
 // Upload do JSON do chatbot
 jsonUpload.addEventListener('change', async (event) => {
     const file = event.target.files[0];
@@ -383,6 +547,19 @@ jsonUpload.addEventListener('change', async (event) => {
             return;
         }
 
+        let isTiledeskFormat = false;
+        if (jsonData && Array.isArray(jsonData.intents)) {
+            try {
+                const convertedFlow = convertTiledeskToNexusFlow(jsonData);
+                jsonData = {
+                    flow: convertedFlow
+                };
+                isTiledeskFormat = true;
+            } catch (err) {
+                throw new Error("Falha ao converter o formato do chatbot importado: " + err.message);
+            }
+        }
+
         if (jsonData && Array.isArray(jsonData.flow)) {
             currentFlowData = jsonData.flow;
             rawJsonFlow = jsonData; // Armazena o JSON original completo
@@ -390,7 +567,7 @@ jsonUpload.addEventListener('change', async (event) => {
             
             // Atualizar UI com informações do arquivo
             loadedFilename.textContent = file.name;
-            loadedStatus.textContent = "Pronto para análise";
+            loadedStatus.textContent = isTiledeskFormat ? "Pronto para análise (convertido de Tiledesk)" : "Pronto para análise";
             
             // Computar estatísticas do fluxo
             computeFlowStats(jsonData.flow);
@@ -403,7 +580,7 @@ jsonUpload.addEventListener('change', async (event) => {
                 addMessage("system", `Fluxo "${file.name}" carregado com sucesso! Pergunte algo para depurar o chatbot.`);
             }
         } else {
-            throw new Error("Estrutura JSON inválida: Chave 'flow' não encontrada.");
+            throw new Error("Estrutura JSON inválida: Chave 'flow' ou 'intents' não encontrada.");
         }
 
     } catch (error) {
@@ -697,24 +874,210 @@ if (dropzone) {
         e.preventDefault();
         dropzone.classList.remove('border-indigo-500', 'bg-indigo-950/20');
         if (e.dataTransfer.files.length > 0) {
-            handleDrawioFile(e.dataTransfer.files[0]);
+            handleConverterUpload(e.dataTransfer.files[0]);
         }
     });
 
     drawioUpload.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-            handleDrawioFile(e.target.files[0]);
+            handleConverterUpload(e.target.files[0]);
         }
     });
 }
 
-async function handleDrawioFile(file) {
-    if (!file.name.endsWith('.drawio') && !file.name.endsWith('.xml')) {
-        alert("Por favor, selecione apenas arquivos do formato .drawio ou .xml");
+/**
+ * Converte fluxo do Nexus-Flow para Intents do Tiledesk
+ * @param {Array} flowData
+ * @returns {Object} JSON compatível com o formato Tiledesk
+ */
+function convertNexusFlowToTiledesk(flowData) {
+    const intents = [];
+    const nodes = flowData.filter(item => item.edge !== 1 && !item.source);
+    const edges = flowData.filter(item => item.edge === 1 || item.source);
+
+    // Mapeamento de IDs originais para UUIDs válidos exigidos pelo Tiledesk
+    const idMap = {};
+    nodes.forEach(node => {
+        idMap[node.id] = self.crypto.randomUUID();
+    });
+
+    // 1. Mapear os Nós para Intents
+    nodes.forEach(node => {
+        const originalId = node.id;
+        const id = idMap[originalId];
+        const name = node.name || `intent_${originalId}`;
+        
+        let codComponente = node.cod_componente;
+        let taskType = node.task_type;
+        
+        const intent = {
+            webhook_enabled: false,
+            enabled: true,
+            actions: [],
+            intent_id: id,
+            intent_display_name: name,
+            language: "en",
+            agents_available: false,
+            attributes: {
+                position: {
+                    x: node.x || 0,
+                    y: node.y || 0
+                }
+            }
+        };
+
+        // Regras especiais para start
+        if (name === "start") {
+            intent.question = "\\start";
+            intent.attributes.readonly = true;
+            intent.attributes.color = "156,163,205";
+        }
+
+        // Identificar ações lógicas e gerar UUID para cada ação
+        if (codComponente === 9 || taskType === "service") {
+            intent.actions.push({
+                _tdActionType: "webrequestv2",
+                _tdActionId: self.crypto.randomUUID(),
+                url: "https://api.exemplo.com",
+                method: "GET",
+                headersString: { "Content-Type": "application/json" },
+                assignStatusTo: "status",
+                assignErrorTo: "error"
+            });
+        } else if (codComponente === 15) {
+            intent.actions.push({
+                _tdActionType: "jsoncondition",
+                _tdActionId: self.crypto.randomUUID(),
+                groups: []
+            });
+        } else if (codComponente === 19 || taskType === "script") {
+            intent.actions.push({
+                _tdActionType: "code",
+                _tdActionId: self.crypto.randomUUID(),
+                source: "// Código JavaScript\n"
+            });
+        } else if (taskType === "send") {
+            intent.actions.push({
+                _tdActionType: "intent",
+                _tdActionId: self.crypto.randomUUID()
+            });
+        }
+
+        // 2. Mapear as conexões de saída usando o idMap para apontar para UUIDs corretos
+        const outgoingEdges = edges.filter(e => e.source == originalId);
+
+        if (outgoingEdges.length === 1 && !outgoingEdges[0].value) {
+            // Transição direta simples
+            const targetUuid = idMap[outgoingEdges[0].target];
+            if (targetUuid) {
+                intent.attributes.nextBlockAction = {
+                    _tdActionTitle: "",
+                    _tdActionId: self.crypto.randomUUID(),
+                    _tdActionType: "intent",
+                    intentName: `#${targetUuid}`
+                };
+            }
+        } else if (outgoingEdges.length > 0) {
+            outgoingEdges.forEach(edge => {
+                const targetUuid = idMap[edge.target];
+                if (!targetUuid) return;
+
+                const valueLower = (edge.value || "").toLowerCase();
+                const action = intent.actions[0];
+                
+                if (action && (action._tdActionType === "webrequestv2" || action._tdActionType === "jsoncondition")) {
+                    if (valueLower === "sucesso" || valueLower === "sim" || valueLower === "verdadeiro") {
+                        action.trueIntent = `#${targetUuid}`;
+                    } else if (valueLower === "falha" || valueLower === "não" || valueLower === "falso") {
+                        action.falseIntent = `#${targetUuid}`;
+                    }
+                }
+
+                // Cria uma ação de intent direcionada para outros fluxos normais se não for condicional mapeada
+                if (!action || (action._tdActionType !== "webrequestv2" && action._tdActionType !== "jsoncondition")) {
+                    intent.actions.push({
+                        _tdActionType: "intent",
+                        intentName: `#${targetUuid}`,
+                        _tdActionId: self.crypto.randomUUID()
+                    });
+                }
+            });
+        }
+
+        intents.push(intent);
+    });
+
+    return {
+        webhook_enabled: false,
+        language: "en",
+        name: "Chatbot Draw.io Convertido",
+        slug: "chatbot-drawio-convertido",
+        type: "tilebot",
+        subtype: "chatbot",
+        attributes: {
+            variables: {}
+        },
+        intents: intents
+    };
+}
+
+async function handleConverterUpload(file) {
+    downloadBox.classList.add('hidden');
+    
+    const fileNameLower = file.name.toLowerCase();
+    let isJson = fileNameLower.endsWith('.json') || file.type === 'application/json';
+    let fileContent = "";
+    
+    // Tentativa de inferência por conteúdo se não tiver extensão/mimetype mapeado
+    if (!isJson) {
+        try {
+            fileContent = await file.text();
+            const trimmed = fileContent.trim();
+            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                isJson = true;
+            }
+        } catch (e) {
+            // Ignora falhas de leitura inicial
+        }
+    }
+    
+    // 1. Processar arquivo JSON localmente (Conversão JSON ➔ JSON no Cliente)
+    if (isJson) {
+        try {
+            if (!fileContent) {
+                fileContent = await file.text();
+            }
+            let jsonData = JSON.parse(fileContent);
+            
+            if (jsonData && Array.isArray(jsonData.intents)) {
+                // Caso A: Tiledesk ➔ Nexus-Flow
+                lastConvertedFlowData = convertTiledeskToNexusFlow(jsonData);
+                exportFormatSelector.value = 'nexus-flow';
+                downloadBox.classList.remove('hidden');
+                updateDownloadLink();
+            } else if (jsonData && Array.isArray(jsonData.flow)) {
+                // Caso B: Nexus-Flow ➔ Tiledesk
+                lastConvertedFlowData = jsonData.flow;
+                exportFormatSelector.value = 'tiledesk';
+                downloadBox.classList.remove('hidden');
+                updateDownloadLink();
+            } else {
+                alert("Estrutura JSON não reconhecida. Certifique-se de que o arquivo contém a chave 'flow' ou 'intents'.");
+            }
+        } catch (err) {
+            alert("Erro ao ler JSON: " + err.message);
+        } finally {
+            drawioUpload.value = '';
+        }
         return;
     }
 
-    downloadBox.classList.add('hidden');
+    // 2. Processar arquivo XML/Draw.io (Conversão XML ➔ JSON via Backend)
+    if (!fileNameLower.endsWith('.drawio') && !fileNameLower.endsWith('.xml')) {
+        alert("Por favor, selecione arquivos do formato .drawio, .xml ou .json");
+        return;
+    }
+
     converterLoading.classList.remove('hidden');
     dropzone.classList.add('opacity-55', 'pointer-events-none');
 
@@ -738,11 +1101,10 @@ async function handleDrawioFile(file) {
         }
 
         const convertedJson = await response.json();
-        const blob = new Blob([JSON.stringify(convertedJson, null, 4)], { type: 'application/json' });
-        const downloadUrl = URL.createObjectURL(blob);
-        
-        btnDownload.href = downloadUrl;
+        lastConvertedFlowData = convertedJson.flow; // Salva o array de fluxo
+        exportFormatSelector.value = 'nexus-flow';
         downloadBox.classList.remove('hidden');
+        updateDownloadLink();
 
     } catch (err) {
         alert("Erro na conversão: " + err.message);
@@ -751,6 +1113,36 @@ async function handleDrawioFile(file) {
         dropzone.classList.remove('opacity-55', 'pointer-events-none');
         drawioUpload.value = '';
     }
+}
+
+function updateDownloadLink() {
+    if (!lastConvertedFlowData) return;
+    
+    const selectedFormat = exportFormatSelector.value;
+    let outputJson;
+    let filename = 'fluxo_estella.json';
+    
+    if (selectedFormat === 'tiledesk') {
+        outputJson = convertNexusFlowToTiledesk(lastConvertedFlowData);
+        filename = 'fluxo_tiledesk.json';
+    } else {
+        outputJson = { flow: lastConvertedFlowData };
+    }
+    
+    // Revoga a URL antiga do Blob para evitar vazamento de memória
+    if (btnDownload.href && btnDownload.href.startsWith('blob:')) {
+        URL.revokeObjectURL(btnDownload.href);
+    }
+    
+    const blob = new Blob([JSON.stringify(outputJson, null, 4)], { type: 'application/json' });
+    const downloadUrl = URL.createObjectURL(blob);
+    
+    btnDownload.href = downloadUrl;
+    btnDownload.download = filename;
+}
+
+if (exportFormatSelector) {
+    exportFormatSelector.addEventListener('change', updateDownloadLink);
 }
 
 // ==========================================
